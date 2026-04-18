@@ -248,16 +248,21 @@ function fuzzyFind(input) {
     if(invMap[n + suf]) return invMap[n + suf];
   }
 
-  // 4. 輸入包含在藥名裡（前綴比對）
+  // 4. 前綴比對（輸入是藥名開頭，允許差距3字以內）
   for(const key of Object.keys(invMap)){
-    if(key.startsWith(n) && key.length <= n.length + 3) return invMap[key];
+    if(key.startsWith(n) && key.length <= n.length + 4) return invMap[key];
   }
 
-  // 5. 藥名包含輸入（子字串比對，輸入至少3字）
-  if(n.length >= 3){
+  // 5. 子字串比對（藥名包含輸入，輸入至少2字）
+  if(n.length >= 2){
     for(const key of Object.keys(invMap)){
       if(key.includes(n)) return invMap[key];
     }
+  }
+
+  // 6. 輸入包含藥名（藥名是輸入的子字串，藥名至少2字）
+  for(const key of Object.keys(invMap)){
+    if(key.length >= 2 && n.includes(key)) return invMap[key];
   }
 
   return null;
