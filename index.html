@@ -85,9 +85,9 @@
 例如：
 延胡索10
 補陽還五湯8
-麻黃2
+荷葉2
 陳皮5"></textarea>
-  <p class="hint">✦ 品名後直接加數量（如：補陽還五湯8）<br>✦ 自動判斷單方100g／單方200g／複方，不需手動加標題</p>
+  <p class="hint">✦ 品名後直接加數量（如：補陽還五湯8）<br>✦ 自動判斷單方100g／單方200g／複方200g</p>
   <div class="btn-group">
     <button class="btn btn-primary" onclick="checkInventory()">查詢庫存</button>
     <button class="btn btn-refresh" onclick="loadCSV()">🔄 更新</button>
@@ -123,8 +123,17 @@ const THRESHOLD = 3330;
 let invMap = {};
 let lastUpdated = '';
 
+// 分類對照表（固定，不受CSV欄位影響）
+const SINGLE100 = new Set(["大黃","大棗","山藥","川芎","川牛膝","三七","丹參","木香","生地黃","玉米鬚","甘草","白朮","白芍","白芷","北板藍根","石菖蒲","何首烏","赤芍","辛夷","防風","牡丹皮","延胡索","金銀花","羌活","知母","香附","厚朴","枳實","紅花","枳殼","苦參","柏子仁","炮附子","穿心蓮","威靈仙","益母草","桔梗","柴胡","秦艽","茯苓","荊芥","桂枝","桑葉","桑白皮","浙貝母","茵陳蒿","夏枯草","栝樓實","魚腥草","乾薑","淫羊藿","陳皮","荷葉","連翹","梔子","菊花","黃耆","黃芩","黃柏","黃連","紫蘇葉","番瀉葉","當歸","葛根","蒼朮","蒼耳子","綿茵陳","蒲黃","蒲公英","廣藿香","熟地黃","澤瀉","獨活","龍膽","薑黃","鎖陽","懷牛膝","黨參","續斷","鬱金"]);
+const SINGLE200 = new Set(["麻黃"]);
+
+function getCategory(name) {
+  if(SINGLE200.has(name)) return '單方200g';
+  if(SINGLE100.has(name)) return '單方100g';
+  return '複方200g';
+}
+
 function parseCSVLine(line) {
-  // 正確解析CSV，處理引號內含逗號的情況
   const result = [];
   let cur = ''; let inQ = false;
   for(let i = 0; i < line.length; i++){
@@ -140,29 +149,22 @@ function parseCSVLine(line) {
 function parseCSV(text) {
   const newMap = {};
   const lines = text.split('\n');
-  let inSingle200 = false;
   lines.forEach(line => {
     const cols = parseCSVLine(line);
-    // 偵測單方200g區域
-    const col8 = (cols[8]||'').trim().replace(/^"|"$/g,'');
-    if(col8 === '單方200g') { inSingle200 = true; }
-
-    // col0-2: 複方, col4-6: 複方, col8-10: 複方或單方200g, col12-14: 單方100g
-    const colSets = [
-      [0,1,2,'複方200g'],
-      [4,5,6,'複方200g'],
-      [8,9,10, inSingle200 ? '單方200g' : '複方200g'],
-      [12,13,14,'單方100g']
-    ];
-    colSets.forEach(([ni, si, pi, cat]) => {
-      const name = (cols[ni]||'').trim().replace(/^"|"$/g,'');
-      const status = (cols[si]||'').trim().replace(/^"|"$/g,'');
-      const priceStr = (cols[pi]||'').trim().replace(/^"|"$/g,'').replace(/,/g,'');
-      if(name && (status === '缺' || status === '無')) {
-        const price = parseInt(priceStr) || 0;
-        newMap[name.replace(/\s/g,'')] = {n: name, s: status, p: price, cat: cat};
+    // 掃描所有欄位，找「缺」或「無」的位置
+    for(let i = 1; i < cols.length - 1; i++){
+      const status = (cols[i]||'').trim().replace(/^"|"$/g,'');
+      if(status === '缺' || status === '無'){
+        const name = (cols[i-1]||'').trim().replace(/^"|"$/g,'');
+        const priceRaw = (cols[i+1]||'').trim().replace(/^"|"$/g,'').replace(/,/g,'');
+        const price = parseInt(priceRaw) || 0;
+        // 過濾掉非藥名的欄位（數字、標題、空白）
+        if(name && name.length >= 2 && isNaN(Number(name)) && !/^[\d劃單複方gml以上每目實際]+$/.test(name)){
+          const cat = getCategory(name);
+          newMap[name.replace(/\s/g,'')] = {n: name, s: status, p: price, cat: cat};
+        }
       }
-    });
+    }
   });
   return newMap;
 }
@@ -187,8 +189,7 @@ async function loadCSV() {
     dot.className = 'sync-dot err';
     msg.textContent = '同步失敗，請點🔄重試';
   }
-  const overlay = document.getElementById('loadingOverlay');
-  overlay.style.display = 'none';
+  document.getElementById('loadingOverlay').style.display = 'none';
 }
 
 function norm(s){ return s.replace(/\s+/g,'').replace(/[（）【】()[\]×x、，,。.！!？?]/g,''); }
@@ -204,40 +205,32 @@ function checkInventory(){
   const raw = document.getElementById('inputArea').value.trim();
   if(!raw) return;
   const lines = raw.split('\n').map(l=>l.trim()).filter(l=>l.length>0);
-
   const items = [];
   lines.forEach(line => {
     const {name, qty} = parseLine(line);
     const found = invMap[norm(name)];
     if(found){
-      // 自動取得分類
-      const cat = found.cat || '複方200g';
-      items.push({name, qty, st: found.s==='缺'?'have':'none', price: found.p, cat: cat});
+      items.push({name, qty, st: found.s==='缺'?'have':'none', price: found.p, cat: found.cat});
     } else {
       items.push({name, qty, st:'miss', price: 0, cat: '查無'});
     }
   });
-
   renderResults(items);
 }
 
 function groupByCategory(items) {
-  const order = ['複方200g', '單方100g', '單方200g', '查無'];
+  const order = ['複方200g','單方100g','單方200g','查無'];
   const map = {};
   items.forEach(i => {
-    const k = i.cat;
-    if(!map[k]) map[k] = [];
-    map[k].push(i);
+    if(!map[i.cat]) map[i.cat] = [];
+    map[i.cat].push(i);
   });
-  const result = [];
-  order.forEach(k => { if(map[k] && map[k].length) result.push({label: k, items: map[k]}); });
-  return result;
+  return order.filter(k=>map[k]&&map[k].length).map(k=>({label:k, items:map[k]}));
 }
 
 function renderResults(items){
   const haveItems = items.filter(i=>i.st==='have');
   const badItems = items.filter(i=>i.st!=='have');
-
   let total = 0; let hasTimePrice = false;
   haveItems.forEach(i=>{ if(i.price===0) hasTimePrice=true; else total += i.price*i.qty; });
 
@@ -261,39 +254,31 @@ function renderResults(items){
       </div>`;
   } else { amountBox.innerHTML=''; }
 
-  // 有庫存 - 依分類分組
   const haveCard = document.getElementById('haveCard');
   if(haveItems.length){
     haveCard.classList.remove('hidden');
-    const haveGroups = groupByCategory(haveItems);
-    document.getElementById('haveArea').innerHTML = haveGroups.map(g=>`
+    document.getElementById('haveArea').innerHTML = groupByCategory(haveItems).map(g=>`
       <div class="sub-label">${g.label}</div>
       <div class="tag-wrap">${g.items.map(i=>`<span class="tag tag-have">${i.name}<span class="tag-qty">×${i.qty}</span></span>`).join('')}</div>
     `).join('');
   } else { haveCard.classList.add('hidden'); }
 
-  // 無庫存/查無 - 依分類分組
   const noneCard = document.getElementById('noneCard');
   if(badItems.length){
     noneCard.classList.remove('hidden');
-    const noneGroups = groupByCategory(badItems);
-    document.getElementById('noneArea').innerHTML = noneGroups.map(g=>`
+    document.getElementById('noneArea').innerHTML = groupByCategory(badItems).map(g=>`
       <div class="sub-label">${g.label}</div>
       <div class="tag-wrap">${g.items.map(i=>`<span class="tag tag-none">${i.name}<span class="tag-qty">×${i.qty}</span></span>`).join('')}</div>
     `).join('');
   } else { noneCard.classList.add('hidden'); }
 
-  // 給客人訊息
   let preview = '📋 訂單確認：\n';
   if(haveItems.length){
-    const haveGroups = groupByCategory(haveItems);
-    haveGroups.forEach(g=>{ preview+=`【${g.label}】\n`; g.items.forEach(i=>{ preview+=`${i.name} ${i.qty}\n`; }); });
+    groupByCategory(haveItems).forEach(g=>{ preview+=`【${g.label}】\n`; g.items.forEach(i=>{ preview+=`${i.name} ${i.qty}\n`; }); });
   } else { preview+='（無）\n'; }
-
   if(badItems.length){
     preview += '\n❌ 無庫存：\n';
-    const noneGroups = groupByCategory(badItems);
-    noneGroups.forEach(g=>{ preview+=`【${g.label}】\n`; g.items.forEach(i=>{ preview+=`${i.name} ${i.qty}\n`; }); });
+    groupByCategory(badItems).forEach(g=>{ preview+=`【${g.label}】\n`; g.items.forEach(i=>{ preview+=`${i.name} ${i.qty}\n`; }); });
   }
   preview += '\n（庫存每日變動，以實際出單為準）';
   document.getElementById('previewText').textContent = preview;
