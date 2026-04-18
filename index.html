@@ -194,6 +194,75 @@ async function loadCSV() {
 
 function norm(s){ return s.replace(/\s+/g,'').replace(/[（）【】()[\]×x、，,。.！!？?]/g,''); }
 
+// 特殊簡寫對照表
+const ALIAS = {
+  '清心蓮子': '清心蓮子飲',
+  '辛夷清肺': '辛夷清肺湯',
+  '柴胡龍骨牡蠣': '柴胡加龍骨牡蠣湯',
+  '柴胡加龍牡': '柴胡加龍骨牡蠣湯',
+  '柴胡龍牡': '柴胡加龍骨牡蠣湯',
+  '苓甘五味': '苓甘五味薑辛半夏杏仁湯',
+  '葛根芩連': '葛根黃芩黃連湯',
+  '桂枝龍骨牡蠣': '桂枝加龍骨牡蠣湯',
+  '桂枝加龍牡': '桂枝加龍骨牡蠣湯',
+  '栝樓薤白': '栝樓薤白半夏湯',
+  '參苓白朮': '參苓白朮散',
+  '荊防敗毒': '荊防敗毒散',
+  '甘麥大棗': '甘麥大棗湯',
+  '杞菊地黃': '杞菊地黃丸',
+  '身痛逐瘀': '身痛逐瘀湯',
+  '防風通聖': '防風通聖散',
+  '六味地黃': '六味地黃丸',
+  '八味地黃': '八味地黃丸',
+  '知柏地黃': '知柏地黃丸',
+  '濟生腎氣': '濟生腎氣丸',
+  '金鎖固精': '金鎖固精丸',
+  '女科柏子仁': '女科柏子仁丸',
+  '桂枝茯苓': '桂枝茯苓丸',
+  '麻杏甘石': '麻杏甘石湯',
+  '麻杏薏甘': '麻杏薏甘湯',
+  '麻黃附子細辛': '麻黃附子細辛湯',
+  '半夏天麻白朮': '半夏天麻白朮湯',
+  '天麻鉤藤': '天麻鉤藤飲',
+  '茵陳五苓': '茵陳五苓散',
+};
+
+// 模糊比對：輸入藥名 → 找最接近的庫存藥名
+function fuzzyFind(input) {
+  const n = norm(input);
+
+  // 1. 完全符合
+  if(invMap[n]) return invMap[n];
+
+  // 2. 特殊簡寫對照
+  for(const [alias, full] of Object.entries(ALIAS)){
+    if(n === norm(alias)){
+      const fullNorm = norm(full);
+      if(invMap[fullNorm]) return invMap[fullNorm];
+    }
+  }
+
+  // 3. 省略最後一個字（湯散丸飲膏丹片）
+  const suffixes = ['湯','散','丸','飲','膏','丹','片'];
+  for(const suf of suffixes){
+    if(invMap[n + suf]) return invMap[n + suf];
+  }
+
+  // 4. 輸入包含在藥名裡（前綴比對）
+  for(const key of Object.keys(invMap)){
+    if(key.startsWith(n) && key.length <= n.length + 3) return invMap[key];
+  }
+
+  // 5. 藥名包含輸入（子字串比對，輸入至少3字）
+  if(n.length >= 3){
+    for(const key of Object.keys(invMap)){
+      if(key.includes(n)) return invMap[key];
+    }
+  }
+
+  return null;
+}
+
 function parseLine(line){
   const m = line.match(/^(.*?)(\d+)$/);
   if(m && m[1].trim().length > 0) return {name: m[1].trim(), qty: parseInt(m[2])};
@@ -208,7 +277,7 @@ function checkInventory(){
   const items = [];
   lines.forEach(line => {
     const {name, qty} = parseLine(line);
-    const found = invMap[norm(name)];
+    const found = fuzzyFind(name);
     if(found){
       items.push({name, qty, st: found.s==='缺'?'have':'none', price: found.p, cat: found.cat});
     } else {
