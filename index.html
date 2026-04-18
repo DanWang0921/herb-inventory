@@ -294,6 +294,9 @@ const ALIAS = {
   '溫經湯': '溫經湯',
   '獨活寄生': '獨活寄生湯',
   '疏經活血': '疏經活血湯',
+  '蔘苓白朮': '參苓白朮散',
+  '潤腸丸': '潤腸湯',
+  '川芎茶調': '川芎茶調散',
 };
 
 // 模糊比對：輸入藥名 → 找最接近的庫存藥名
@@ -341,10 +344,7 @@ function fuzzyFind(input) {
     }
   }
 
-  // 6. 輸入包含藥名（藥名是輸入的子字串，藥名至少2字）
-  for(const key of Object.keys(invMap)){
-    if(key.length >= 2 && n.includes(key)) return invMap[key];
-  }
+  // 6. 輸入包含藥名（拿掉，太容易誤判）
 
   return null;
 }
