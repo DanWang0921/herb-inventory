@@ -353,7 +353,7 @@ function checkInventory(){
     const {name, qty} = parseLine(line);
     const found = fuzzyFind(name);
     if(found){
-      items.push({name, qty, st: found.s==='缺'?'have':'none', price: found.p, cat: found.cat});
+      items.push({name: found.n, qty, st: found.s==='缺'?'have':'none', price: found.p, cat: found.cat});
     } else {
       items.push({name, qty, st:'miss', price: 0, cat: '查無'});
     }
