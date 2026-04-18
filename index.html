@@ -308,13 +308,25 @@ function fuzzyFind(input) {
     if(n === norm(alias)){
       const fullNorm = norm(full);
       if(invMap[fullNorm]) return invMap[fullNorm];
+      // 即使invMap沒有，也回傳一個帶完整名稱的暫存物件
+      return {n: full, s: '缺', p: 0, cat: getCategory(full)};
     }
   }
 
   // 3. 省略最後一個字（湯散丸飲膏丹片）
   const suffixes = ['湯','散','丸','飲','膏','丹','片'];
   for(const suf of suffixes){
-    if(invMap[n + suf]) return invMap[n + suf];
+    const fullKey = n + suf;
+    if(invMap[fullKey]) return invMap[fullKey];
+  }
+
+  // 3b. 輸入比藥名多一字（多打了湯散等）→ 去掉最後一字再找
+  const lastChar = n.slice(-1);
+  if(['湯','散','丸','飲','膏','丹','片'].includes(lastChar)){
+    const shorter = n.slice(0, -1);
+    for(const suf of suffixes){
+      if(invMap[shorter + suf]) return invMap[shorter + suf];
+    }
   }
 
   // 4. 前綴比對（輸入是藥名開頭，允許差距3字以內）
