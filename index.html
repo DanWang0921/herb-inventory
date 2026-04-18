@@ -123,12 +123,26 @@ const THRESHOLD = 3330;
 let invMap = {};
 let lastUpdated = '';
 
+function parseCSVLine(line) {
+  // 正確解析CSV，處理引號內含逗號的情況
+  const result = [];
+  let cur = ''; let inQ = false;
+  for(let i = 0; i < line.length; i++){
+    const c = line[i];
+    if(c === '"'){ inQ = !inQ; }
+    else if(c === ',' && !inQ){ result.push(cur.trim()); cur = ''; }
+    else { cur += c; }
+  }
+  result.push(cur.trim());
+  return result;
+}
+
 function parseCSV(text) {
   const newMap = {};
   const lines = text.split('\n');
   let inSingle200 = false;
   lines.forEach(line => {
-    const cols = line.split(',');
+    const cols = parseCSVLine(line);
     // 偵測單方200g區域
     const col8 = (cols[8]||'').trim().replace(/^"|"$/g,'');
     if(col8 === '單方200g') { inSingle200 = true; }
