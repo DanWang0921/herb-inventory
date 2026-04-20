@@ -382,7 +382,7 @@ function checkInventory(){
   const lines = raw.split('\n').map(l=>l.trim()).filter(l=>l.length>0);
   const items = [];
   lines.forEach(line => {
-    const {name, qty} = parseLine(line);
+    const {name, qty, qtyDisplay} = parseLine(line);
     const found = fuzzyFind(name);
     if(found){
       items.push({name: found.n, qty, qtyDisplay, st: found.s==='缺'?'have':'none', price: found.p, cat: found.cat});
