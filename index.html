@@ -356,23 +356,23 @@ function fuzzyFind(input) {
 }
 
 function parseLine(line){
-  // 支援多種數量格式：藥名12、藥名X12、藥名*12、藥名10+2
-  const clean = line.replace(/[Xx×＊*＋]/g, match => {
-    if(match === '+' || match === '＋') return '+';
-    return ' ';
-  }).trim();
+  let s = line.replace(/[Xx×＊*]/g, ' ').trim();
 
-  // 10+2 加總
-  const addMatch = clean.match(/^(.*?)\s*(\d+)\s*\+\s*(\d+)$/);
+  // 格式：藥名 數字+數字（加總）
+  const addMatch = s.match(/^(.+?)\s*(\d+\s*\+\s*\d+)$/);
   if(addMatch && addMatch[1].trim().length > 0){
-    return {name: addMatch[1].trim(), qty: parseInt(addMatch[2]) + parseInt(addMatch[3])};
+    const parts = addMatch[2].split('+').map(n=>parseInt(n.trim()));
+    const total = parts.reduce((a,b)=>a+b,0);
+    return {name: addMatch[1].trim(), qty: total, qtyDisplay: addMatch[2].trim()};
   }
 
-  // 一般數字（含X、*前綴）
-  const m = line.replace(/[Xx×＊*]/g,' ').trim().match(/^(.*?)(\d+)$/);
-  if(m && m[1].trim().length > 0) return {name: m[1].trim(), qty: parseInt(m[2])};
+  // 格式：藥名 數字
+  const numMatch = s.match(/^(.+?)\s*(\d+)$/);
+  if(numMatch && numMatch[1].trim().length > 0){
+    return {name: numMatch[1].trim(), qty: parseInt(numMatch[2]), qtyDisplay: numMatch[2]};
+  }
 
-  return {name: line.trim(), qty: 1};
+  return {name: line.trim(), qty: 1, qtyDisplay: '1'};
 }
 
 function checkInventory(){
@@ -385,9 +385,9 @@ function checkInventory(){
     const {name, qty} = parseLine(line);
     const found = fuzzyFind(name);
     if(found){
-      items.push({name: found.n, qty, st: found.s==='缺'?'have':'none', price: found.p, cat: found.cat});
+      items.push({name: found.n, qty, qtyDisplay, st: found.s==='缺'?'have':'none', price: found.p, cat: found.cat});
     } else {
-      items.push({name, qty, st:'miss', price: 0, cat: '查無'});
+      items.push({name, qty, qtyDisplay, st:'miss', price: 0, cat: '查無'});
     }
   });
   renderResults(items);
@@ -434,7 +434,7 @@ function renderResults(items){
     haveCard.classList.remove('hidden');
     document.getElementById('haveArea').innerHTML = groupByCategory(haveItems).map(g=>`
       <div class="sub-label">${g.label}</div>
-      <div class="tag-wrap">${g.items.map(i=>`<span class="tag tag-have">${i.name}<span class="tag-qty">×${i.qty}</span></span>`).join('')}</div>
+      <div class="tag-wrap">${g.items.map(i=>`<span class="tag tag-have">${i.name}<span class="tag-qty">×${i.qtyDisplay}</span></span>`).join('')}</div>
     `).join('');
   } else { haveCard.classList.add('hidden'); }
 
@@ -443,17 +443,17 @@ function renderResults(items){
     noneCard.classList.remove('hidden');
     document.getElementById('noneArea').innerHTML = groupByCategory(badItems).map(g=>`
       <div class="sub-label">${g.label}</div>
-      <div class="tag-wrap">${g.items.map(i=>`<span class="tag tag-none">${i.name}<span class="tag-qty">×${i.qty}</span></span>`).join('')}</div>
+      <div class="tag-wrap">${g.items.map(i=>`<span class="tag tag-none">${i.name}<span class="tag-qty">×${i.qtyDisplay}</span></span>`).join('')}</div>
     `).join('');
   } else { noneCard.classList.add('hidden'); }
 
   let preview = '📋 訂單確認：\n';
   if(haveItems.length){
-    groupByCategory(haveItems).forEach(g=>{ preview+=`【${g.label}】\n`; g.items.forEach(i=>{ preview+=`${i.name} ${i.qty}\n`; }); });
+    groupByCategory(haveItems).forEach(g=>{ preview+=`【${g.label}】\n`; g.items.forEach(i=>{ preview+=`${i.name} ${i.qtyDisplay}\n`; }); });
   } else { preview+='（無）\n'; }
   if(badItems.length){
     preview += '\n❌ 無庫存：\n';
-    groupByCategory(badItems).forEach(g=>{ preview+=`【${g.label}】\n`; g.items.forEach(i=>{ preview+=`${i.name} ${i.qty}\n`; }); });
+    groupByCategory(badItems).forEach(g=>{ preview+=`【${g.label}】\n`; g.items.forEach(i=>{ preview+=`${i.name} ${i.qtyDisplay}\n`; }); });
   }
   preview += '\n（庫存每日變動，以實際出單為準）';
   document.getElementById('previewText').textContent = preview;
