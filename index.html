@@ -299,12 +299,18 @@ const ALIAS = {
   '川芎茶調': '川芎茶調散',
 };
 
+// 這些藥名必須完全符合才能比對，不做模糊比對
+const EXACT_ONLY = new Set(['麥門冬','薏苡仁','酸棗仁','桔梗','柴胡','當歸','川芎','茯苓','甘草','黃耆','黃芩','黃柏','黃連','菊花','葛根','防風','荊芥','桂枝','陳皮','蒼朮']);
+
 // 模糊比對：輸入藥名 → 找最接近的庫存藥名
 function fuzzyFind(input) {
   const n = norm(input);
 
   // 1. 完全符合
   if(invMap[n]) return invMap[n];
+
+  // 若在精確比對清單中，不做模糊比對
+  if(EXACT_ONLY.has(n)) return null;
 
   // 2. 特殊簡寫對照
   for(const [alias, full] of Object.entries(ALIAS)){
@@ -350,8 +356,22 @@ function fuzzyFind(input) {
 }
 
 function parseLine(line){
-  const m = line.match(/^(.*?)(\d+)$/);
+  // 支援多種數量格式：藥名12、藥名X12、藥名*12、藥名10+2
+  const clean = line.replace(/[Xx×＊*＋]/g, match => {
+    if(match === '+' || match === '＋') return '+';
+    return ' ';
+  }).trim();
+
+  // 10+2 加總
+  const addMatch = clean.match(/^(.*?)\s*(\d+)\s*\+\s*(\d+)$/);
+  if(addMatch && addMatch[1].trim().length > 0){
+    return {name: addMatch[1].trim(), qty: parseInt(addMatch[2]) + parseInt(addMatch[3])};
+  }
+
+  // 一般數字（含X、*前綴）
+  const m = line.replace(/[Xx×＊*]/g,' ').trim().match(/^(.*?)(\d+)$/);
   if(m && m[1].trim().length > 0) return {name: m[1].trim(), qty: parseInt(m[2])};
+
   return {name: line.trim(), qty: 1};
 }
 
