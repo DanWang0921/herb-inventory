@@ -154,7 +154,7 @@ function parseCSV(text) {
     // 掃描所有欄位，找「缺」或「無」的位置
     for(let i = 1; i < cols.length - 1; i++){
       const status = (cols[i]||'').trim().replace(/^"|"$/g,'');
-      if(status === '缺' || status === '無'){
+      if(status === '有' || status === '無'){
         const name = (cols[i-1]||'').trim().replace(/^"|"$/g,'');
         const priceRaw = (cols[i+1]||'').trim().replace(/^"|"$/g,'').replace(/,/g,'');
         const price = parseInt(priceRaw) || 0;
@@ -385,7 +385,7 @@ function checkInventory(){
     const {name, qty, qtyDisplay} = parseLine(line);
     const found = fuzzyFind(name);
     if(found){
-      items.push({name: found.n, qty, qtyDisplay, st: found.s==='缺'?'have':'none', price: found.p, cat: found.cat});
+      items.push({name: found.n, qty, qtyDisplay, st: found.s==='有'?'have':'none', price: found.p, cat: found.cat});
     } else {
       items.push({name, qty, qtyDisplay, st:'miss', price: 0, cat: '查無'});
     }
