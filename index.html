@@ -28,11 +28,11 @@
   .btn-primary { background: #2c2416; color: #f5f2ed; }
   .btn-ghost { background: #f0ebe3; color: #2c2416; flex: 0 0 auto; padding: 14px 16px; }
   .btn-refresh { background: #e8f0fe; color: #1a56cc; flex: 0 0 auto; padding: 14px 16px; font-size: 14px; }
-  .stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; }
-  .stat { background: #faf8f5; border-radius: 12px; padding: 12px 8px; text-align: center; }
-  .stat-num { font-size: 24px; font-weight: 700; }
-  .stat-lbl { font-size: 11px; color: #8a7560; margin-top: 2px; }
-  .n-total { color: #2c2416; } .n-have { color: #2d7a4f; } .n-none { color: #c0392b; }
+  .stats { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; }
+  .stat { background: #faf8f5; border-radius: 12px; padding: 10px 6px; text-align: center; }
+  .stat-num { font-size: 22px; font-weight: 700; }
+  .stat-lbl { font-size: 10px; color: #8a7560; margin-top: 2px; }
+  .n-total { color: #2c2416; } .n-have { color: #2d7a4f; } .n-contract { color: #c97a1a; } .n-none { color: #c0392b; }
   .amount-box { border-radius: 12px; padding: 14px 16px; margin-top: 12px; display: flex; align-items: center; gap: 12px; }
   .amount-ok { background: #e8f5ee; } .amount-warn { background: #fef9e7; border: 1.5px solid #f0c040; }
   .amount-icon { font-size: 24px; } .amount-text { flex: 1; }
@@ -41,11 +41,15 @@
   .amount-msg { font-size: 12px; margin-top: 2px; }
   .amount-ok .amount-msg { color: #2d7a4f; } .amount-warn .amount-msg { color: #b07000; font-weight: 600; }
   .section-head { font-size: 13px; font-weight: 700; padding: 8px 12px; border-radius: 10px; margin-bottom: 8px; }
-  .head-have { background: #e8f5ee; color: #1e6e3e; } .head-none { background: #fdecea; color: #b03020; }
+  .head-have { background: #e8f5ee; color: #1e6e3e; }
+  .head-contract { background: #fef3e2; color: #c97a1a; border: 1.5px solid #f0c040; }
+  .head-none { background: #fdecea; color: #b03020; }
   .sub-label { font-size: 11px; font-weight: 600; color: #8a7560; letter-spacing: 0.06em; margin: 8px 0 5px 2px; }
   .tag-wrap { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 10px; }
   .tag { font-size: 14px; padding: 6px 12px; border-radius: 20px; font-weight: 500; }
-  .tag-have { background: #e8f5ee; color: #1e6e3e; } .tag-none { background: #fdecea; color: #b03020; }
+  .tag-have { background: #e8f5ee; color: #1e6e3e; }
+  .tag-contract { background: #fef3e2; color: #c97a1a; border: 1px solid #f0c040; }
+  .tag-none { background: #fdecea; color: #b03020; }
   .tag-qty { font-size: 12px; opacity: 0.75; margin-left: 3px; }
   .preview-wrap { background: #faf8f5; border: 1.5px solid #e0d8cc; border-radius: 12px; padding: 14px; margin-bottom: 12px; }
   .preview-wrap pre { font-family: -apple-system, 'PingFang TC', monospace; font-size: 14px; line-height: 1.9; color: #2c2416; white-space: pre-wrap; }
@@ -85,9 +89,8 @@
 例如：
 延胡索10
 補陽還五湯8
-荷葉2
-陳皮5"></textarea>
-  <p class="hint">✦ 品名後直接加數量（如：補陽還五湯8）<br>✦ 自動判斷單方100g／單方200g／複方200g</p>
+荷葉2"></textarea>
+  <p class="hint">✦ 品名後直接加數量（如：補陽還五湯8）<br>✦ 自動判斷單方100g／單方200g／複方200g<br>✦ 橘色標示為合約品項（-約）</p>
   <div class="btn-group">
     <button class="btn btn-primary" onclick="checkInventory()">查詢庫存</button>
     <button class="btn btn-refresh" onclick="loadCSV()">🔄 更新</button>
@@ -102,11 +105,11 @@
     <div id="amountBox"></div>
   </div>
   <div class="card hidden" id="haveCard">
-    <div class="section-head head-have">📋 訂單確認</div>
+    <div class="section-head head-have">訂單確認</div>
     <div id="haveArea"></div>
   </div>
   <div class="card hidden" id="noneCard">
-    <div class="section-head head-none">❌ 無庫存／查無品項</div>
+    <div class="section-head head-none">❌ 無庫存／無藥證品項</div>
     <div id="noneArea"></div>
   </div>
   <div class="card">
@@ -123,9 +126,9 @@ const THRESHOLD = 3330;
 let invMap = {};
 let lastUpdated = '';
 
-// 分類對照表（固定，不受CSV欄位影響）
 const SINGLE100 = new Set(["大黃","大棗","山藥","川芎","川牛膝","三七","丹參","木香","生地黃","玉米鬚","甘草","白朮","白芍","白芷","北板藍根","石菖蒲","何首烏","赤芍","辛夷","防風","牡丹皮","延胡索","金銀花","羌活","知母","香附","厚朴","枳實","紅花","枳殼","苦參","柏子仁","炮附子","穿心蓮","威靈仙","益母草","桔梗","柴胡","秦艽","茯苓","荊芥","桂枝","桑葉","桑白皮","浙貝母","茵陳蒿","夏枯草","栝樓實","魚腥草","乾薑","淫羊藿","陳皮","荷葉","連翹","梔子","菊花","黃耆","黃芩","黃柏","黃連","紫蘇葉","番瀉葉","當歸","葛根","蒼朮","蒼耳子","綿茵陳","蒲黃","蒲公英","廣藿香","熟地黃","澤瀉","獨活","龍膽","薑黃","鎖陽","懷牛膝","黨參","續斷","鬱金"]);
 const SINGLE200 = new Set(["麻黃"]);
+const EXACT_ONLY = new Set(['麥門冬','薏苡仁','酸棗仁','桔梗','柴胡','當歸','川芎','茯苓','甘草','黃耆','黃芩','黃柏','黃連','菊花','葛根','防風','荊芥','桂枝','陳皮','蒼朮']);
 
 function getCategory(name) {
   if(SINGLE200.has(name)) return '單方200g';
@@ -151,14 +154,12 @@ function parseCSV(text) {
   const lines = text.split('\n');
   lines.forEach(line => {
     const cols = parseCSVLine(line);
-    // 掃描所有欄位，找「缺」或「無」的位置
     for(let i = 1; i < cols.length - 1; i++){
       const status = (cols[i]||'').trim().replace(/^"|"$/g,'');
-      if(status === '有' || status === '無'){
+      if(status === '有' || status === '無' || status === '合約'){
         const name = (cols[i-1]||'').trim().replace(/^"|"$/g,'');
         const priceRaw = (cols[i+1]||'').trim().replace(/^"|"$/g,'').replace(/,/g,'');
         const price = parseInt(priceRaw) || 0;
-        // 過濾掉非藥名的欄位（數字、標題、空白）
         if(name && name.length >= 2 && isNaN(Number(name)) && !/^[\d劃單複方gml以上每目實際]+$/.test(name)){
           const cat = getCategory(name);
           newMap[name.replace(/\s/g,'')] = {n: name, s: status, p: price, cat: cat};
@@ -194,185 +195,69 @@ async function loadCSV() {
 
 function norm(s){ return s.replace(/\s+/g,'').replace(/[（）【】()[\]×x、，,。.！!？?]/g,''); }
 
-// 特殊簡寫對照表
-const ALIAS = {
-  '清心蓮子': '清心蓮子飲',
-  '辛夷清肺': '辛夷清肺湯',
-  '柴胡龍骨牡蠣': '柴胡加龍骨牡蠣湯',
-  '柴胡加龍牡': '柴胡加龍骨牡蠣湯',
-  '柴胡龍牡': '柴胡加龍骨牡蠣湯',
-  '柴胡加龍骨': '柴胡加龍骨牡蠣湯',
-  '苓甘五味': '苓甘五味薑辛半夏杏仁湯',
-  '葛根芩連': '葛根黃芩黃連湯',
-  '葛根芩連湯': '葛根黃芩黃連湯',
-  '桂枝龍骨牡蠣': '桂枝加龍骨牡蠣湯',
-  '桂枝加龍牡': '桂枝加龍骨牡蠣湯',
-  '桂枝龍牡': '桂枝加龍骨牡蠣湯',
-  '栝樓薤白': '栝樓薤白半夏湯',
-  '參苓白朮': '參苓白朮散',
-  '荊防敗毒': '荊防敗毒散',
-  '甘麥大棗': '甘麥大棗湯',
-  '杞菊地黃': '杞菊地黃丸',
-  '身痛逐瘀': '身痛逐瘀湯',
-  '防風通聖': '防風通聖散',
-  '六味地黃': '六味地黃丸',
-  '八味地黃': '八味地黃丸',
-  '知柏地黃': '知柏地黃丸',
-  '濟生腎氣': '濟生腎氣丸',
-  '金鎖固精': '金鎖固精丸',
-  '女科柏子仁': '女科柏子仁丸',
-  '桂枝茯苓': '桂枝茯苓丸',
-  '麻杏甘石': '麻杏甘石湯',
-  '麻杏薏甘': '麻杏薏甘湯',
-  '麻黃附子細辛': '麻黃附子細辛湯',
-  '半夏天麻白朮': '半夏天麻白朮湯',
-  '天麻鉤藤': '天麻鉤藤飲',
-  '茵陳五苓': '茵陳五苓散',
-  '芍藥甘草': '芍藥甘草湯',
-  '柴胡桂枝': '柴胡桂枝湯',
-  '柴胡疏肝': '柴胡疏肝湯',
-  '柴胡清肝': '柴胡清肝湯',
-  '柴葛解肌': '柴葛解肌湯',
-  '柴陷湯': '柴陷湯',
-  '血府逐瘀': '血府逐瘀湯',
-  '少腹逐瘀': '少腹逐瘀湯',
-  '膈下逐瘀': '膈下逐瘀湯',
-  '補陽還五': '補陽還五湯',
-  '補中益氣': '補中益氣湯',
-  '歸脾湯': '歸脾湯',
-  '天王補心': '天王補心丹',
-  '加味逍遙': '加味逍遙散',
-  '逍遙散': '逍遙散',
-  '龍膽瀉肝': '龍膽瀉肝湯',
-  '黃連解毒': '黃連解毒湯',
-  '半夏瀉心': '半夏瀉心湯',
-  '半夏厚朴': '半夏厚朴湯',
-  '溫清飲': '溫清飲',
-  '當歸四逆': '當歸四逆湯',
-  '當歸芍藥': '當歸芍藥散',
-  '當歸拈痛': '當歸拈痛湯',
-  '當歸飲子': '當歸飲子',
-  '五苓散': '五苓散',
-  '小柴胡': '小柴胡湯',
-  '大柴胡': '大柴胡湯',
-  '小青龍': '小青龍湯',
-  '小建中': '小建中湯',
-  '大建中': '大建中湯',
-  '炙甘草': '炙甘草湯',
-  '酸棗仁': '酸棗仁湯',
-  '天麻鉤藤飲': '天麻鉤藤飲',
-  '防己黃耆': '防己黃耆湯',
-  '羌活勝濕': '羌活勝濕湯',
-  '附子理中': '附子理中湯',
-  '苓桂朮甘': '苓桂朮甘湯',
-  '香砂六君': '香砂六君子湯',
-  '香砂六君子': '香砂六君子湯',
-  '保和丸': '保和丸',
-  '桃紅四物': '桃紅四物湯',
-  '四物湯': '四物湯',
-  '四君子': '四君子湯',
-  '六君子': '六君子湯',
-  '八珍湯': '八珍湯',
-  '十全大補': '十全大補湯',
-  '人參養榮': '人參養榮湯',
-  '生脈飲': '生脈飲',
-  '麥門冬': '麥門冬湯',
-  '沙參麥冬': '沙參麥冬湯',
-  '養陰清肺': '養陰清肺湯',
-  '百合固金': '百合固金湯',
-  '清燥救肺': '清燥救肺湯',
-  '消風散': '消風散',
-  '荊芥連翹': '荊芥連翹湯',
-  '銀翹散': '銀翹散',
-  '桑菊飲': '桑菊飲',
-  '葛根湯': '葛根湯',
-  '麻黃湯': '麻黃湯',
-  '桂枝湯': '桂枝湯',
-  '真武湯': '真武湯',
-  '理中湯': '理中湯',
-  '溫膽湯': '溫膽湯',
-  '溫經湯': '溫經湯',
-  '獨活寄生': '獨活寄生湯',
-  '疏經活血': '疏經活血湯',
-  '蔘苓白朮': '參苓白朮散',
-  '潤腸丸': '潤腸湯',
-  '川芎茶調': '川芎茶調散',
-};
-
-// 這些藥名必須完全符合才能比對，不做模糊比對
-const EXACT_ONLY = new Set(['麥門冬','薏苡仁','酸棗仁','桔梗','柴胡','當歸','川芎','茯苓','甘草','黃耆','黃芩','黃柏','黃連','菊花','葛根','防風','荊芥','桂枝','陳皮','蒼朮']);
-
-// 模糊比對：輸入藥名 → 找最接近的庫存藥名
-function fuzzyFind(input) {
-  const n = norm(input);
-
-  // 1. 完全符合
-  if(invMap[n]) return invMap[n];
-
-  // 若在精確比對清單中，不做模糊比對
-  if(EXACT_ONLY.has(n)) return null;
-
-  // 2. 特殊簡寫對照
-  for(const [alias, full] of Object.entries(ALIAS)){
-    if(n === norm(alias)){
-      const fullNorm = norm(full);
-      if(invMap[fullNorm]) return invMap[fullNorm];
-      // 即使invMap沒有，也回傳一個帶完整名稱的暫存物件
-      return {n: full, s: '缺', p: 0, cat: getCategory(full)};
-    }
-  }
-
-  // 3. 省略最後一個字（湯散丸飲膏丹片）
-  const suffixes = ['湯','散','丸','飲','膏','丹','片'];
-  for(const suf of suffixes){
-    const fullKey = n + suf;
-    if(invMap[fullKey]) return invMap[fullKey];
-  }
-
-  // 3b. 輸入比藥名多一字（多打了湯散等）→ 去掉最後一字再找
-  const lastChar = n.slice(-1);
-  if(['湯','散','丸','飲','膏','丹','片'].includes(lastChar)){
-    const shorter = n.slice(0, -1);
-    for(const suf of suffixes){
-      if(invMap[shorter + suf]) return invMap[shorter + suf];
-    }
-  }
-
-  // 4. 前綴比對（輸入是藥名開頭，允許差距3字以內）
-  for(const key of Object.keys(invMap)){
-    if(key.startsWith(n) && key.length <= n.length + 4) return invMap[key];
-  }
-
-  // 5. 子字串比對（藥名包含輸入，輸入至少2字）
-  if(n.length >= 2){
-    for(const key of Object.keys(invMap)){
-      if(key.includes(n)) return invMap[key];
-    }
-  }
-
-  // 6. 輸入包含藥名（拿掉，太容易誤判）
-
-  return null;
-}
-
 function parseLine(line){
   let s = line.replace(/[Xx×＊*]/g, ' ').trim();
-
-  // 格式：藥名 數字+數字（加總）
   const addMatch = s.match(/^(.+?)\s*(\d+\s*\+\s*\d+)$/);
   if(addMatch && addMatch[1].trim().length > 0){
     const parts = addMatch[2].split('+').map(n=>parseInt(n.trim()));
     const total = parts.reduce((a,b)=>a+b,0);
     return {name: addMatch[1].trim(), qty: total, qtyDisplay: addMatch[2].trim()};
   }
-
-  // 格式：藥名 數字
   const numMatch = s.match(/^(.+?)\s*(\d+)$/);
   if(numMatch && numMatch[1].trim().length > 0){
     return {name: numMatch[1].trim(), qty: parseInt(numMatch[2]), qtyDisplay: numMatch[2]};
   }
-
   return {name: line.trim(), qty: 1, qtyDisplay: '1'};
+}
+
+const ALIAS = {
+  '清心蓮子':'清心蓮子飲','辛夷清肺':'辛夷清肺湯','柴胡龍骨牡蠣':'柴胡加龍骨牡蠣湯',
+  '柴胡加龍牡':'柴胡加龍骨牡蠣湯','柴胡龍牡':'柴胡加龍骨牡蠣湯','柴胡加龍骨':'柴胡加龍骨牡蠣湯',
+  '苓甘五味':'苓甘五味薑辛半夏杏仁湯','葛根芩連':'葛根黃芩黃連湯','葛根芩連湯':'葛根黃芩黃連湯',
+  '桂枝龍骨牡蠣':'桂枝加龍骨牡蠣湯','桂枝加龍牡':'桂枝加龍骨牡蠣湯','栝樓薤白':'栝樓薤白半夏湯',
+  '參苓白朮':'參苓白朮散','蔘苓白朮':'參苓白朮散','荊防敗毒':'荊防敗毒散','甘麥大棗':'甘麥大棗湯',
+  '杞菊地黃':'杞菊地黃丸','身痛逐瘀':'身痛逐瘀湯','防風通聖':'防風通聖散','六味地黃':'六味地黃丸',
+  '八味地黃':'八味地黃丸','知柏地黃':'知柏地黃丸','濟生腎氣':'濟生腎氣丸','金鎖固精':'金鎖固精丸',
+  '女科柏子仁':'女科柏子仁丸','桂枝茯苓':'桂枝茯苓丸','麻杏甘石':'麻杏甘石湯','麻杏薏甘':'麻杏薏甘湯',
+  '麻黃附子細辛':'麻黃附子細辛湯','半夏天麻白朮':'半夏天麻白朮湯','天麻鉤藤':'天麻鉤藤飲',
+  '茵陳五苓':'茵陳五苓散','芍藥甘草':'芍藥甘草湯','柴胡桂枝':'柴胡桂枝湯','柴胡疏肝':'柴胡疏肝湯',
+  '柴胡清肝':'柴胡清肝湯','柴葛解肌':'柴葛解肌湯','血府逐瘀':'血府逐瘀湯','少腹逐瘀':'少腹逐瘀湯',
+  '膈下逐瘀':'膈下逐瘀湯','補陽還五':'補陽還五湯','補中益氣':'補中益氣湯','天王補心':'天王補心丹',
+  '加味逍遙':'加味逍遙散','龍膽瀉肝':'龍膽瀉肝湯','黃連解毒':'黃連解毒湯','半夏瀉心':'半夏瀉心湯',
+  '半夏厚朴':'半夏厚朴湯','當歸四逆':'當歸四逆湯','當歸芍藥':'當歸芍藥散','當歸拈痛':'當歸拈痛湯',
+  '小柴胡':'小柴胡湯','大柴胡':'大柴胡湯','小青龍':'小青龍湯','小建中':'小建中湯','炙甘草':'炙甘草湯',
+  '防己黃耆':'防己黃耆湯','羌活勝濕':'羌活勝濕湯','附子理中':'附子理中湯','苓桂朮甘':'苓桂朮甘湯',
+  '香砂六君':'香砂六君子湯','香砂六君子':'香砂六君子湯','桃紅四物':'桃紅四物湯','十全大補':'十全大補湯',
+  '人參養榮':'人參養榮湯','養陰清肺':'養陰清肺湯','百合固金':'百合固金湯','清燥救肺':'清燥救肺湯',
+  '荊芥連翹':'荊芥連翹湯','獨活寄生':'獨活寄生湯','疏經活血':'疏經活血湯','川芎茶調':'川芎茶調散',
+  '潤腸丸':'潤腸湯',
+};
+
+function fuzzyFind(input) {
+  const n = norm(input);
+  if(invMap[n]) return invMap[n];
+  if(EXACT_ONLY.has(n)) return null;
+  for(const [alias, full] of Object.entries(ALIAS)){
+    if(n === norm(alias)){
+      const fullNorm = norm(full);
+      if(invMap[fullNorm]) return invMap[fullNorm];
+      return {n: full, s: '有', p: 0, cat: getCategory(full)};
+    }
+  }
+  const suffixes = ['湯','散','丸','飲','膏','丹','片'];
+  for(const suf of suffixes){
+    const fullKey = n + suf;
+    if(invMap[fullKey]) return invMap[fullKey];
+  }
+  for(const key of Object.keys(invMap)){
+    if(key.startsWith(n) && key.length <= n.length + 4) return invMap[key];
+  }
+  if(n.length >= 2){
+    for(const key of Object.keys(invMap)){
+      if(key.includes(n)) return invMap[key];
+    }
+  }
+  return null;
 }
 
 function checkInventory(){
@@ -385,16 +270,21 @@ function checkInventory(){
     const {name, qty, qtyDisplay} = parseLine(line);
     const found = fuzzyFind(name);
     if(found){
-      items.push({name: found.n, qty, qtyDisplay, st: found.s==='有'?'have':'none', price: found.p, cat: found.cat});
+      let st = 'none';
+      if(found.s === '有') st = 'have';
+      else if(found.s === '合約') st = 'have';
+      // 合約品項名稱加-約
+      const displayName = found.n;
+      items.push({name: displayName, qty, qtyDisplay, st, price: found.p, cat: found.cat});
     } else {
-      items.push({name, qty, qtyDisplay, st:'miss', price: 0, cat: '查無'});
+      items.push({name, qty, qtyDisplay, st:'miss', price: 0, cat: '無藥證'});
     }
   });
   renderResults(items);
 }
 
 function groupByCategory(items) {
-  const order = ['複方200g','單方100g','單方200g','查無'];
+  const order = ['複方200g','單方100g','單方200g','無藥證'];
   const map = {};
   items.forEach(i => {
     if(!map[i.cat]) map[i.cat] = [];
@@ -405,7 +295,9 @@ function groupByCategory(items) {
 
 function renderResults(items){
   const haveItems = items.filter(i=>i.st==='have');
+  const contractItems = items.filter(i=>i.st==='contract');
   const badItems = items.filter(i=>i.st!=='have');
+
   let total = 0; let hasTimePrice = false;
   haveItems.forEach(i=>{ if(i.price===0) hasTimePrice=true; else total += i.price*i.qty; });
 
@@ -413,11 +305,11 @@ function renderResults(items){
   document.getElementById('statsCards').innerHTML = `
     <div class="stat"><div class="stat-num n-total">${items.length}</div><div class="stat-lbl">查詢品項</div></div>
     <div class="stat"><div class="stat-num n-have">${haveItems.length}</div><div class="stat-lbl">訂單確認</div></div>
-    <div class="stat"><div class="stat-num n-none">${badItems.length}</div><div class="stat-lbl">無庫存／查無</div></div>
+    <div class="stat"><div class="stat-num n-none">${badItems.length}</div><div class="stat-lbl">無庫存／無藥證</div></div>
   `;
 
   const amountBox = document.getElementById('amountBox');
-  if(haveItems.length > 0){
+  if(haveItems.length + contractItems.length > 0){
     const isWarn = total < THRESHOLD;
     amountBox.innerHTML = `
       <div class="amount-box ${isWarn?'amount-warn':'amount-ok'}">
@@ -429,6 +321,7 @@ function renderResults(items){
       </div>`;
   } else { amountBox.innerHTML=''; }
 
+  // 有庫存
   const haveCard = document.getElementById('haveCard');
   if(haveItems.length){
     haveCard.classList.remove('hidden');
@@ -438,6 +331,8 @@ function renderResults(items){
     `).join('');
   } else { haveCard.classList.add('hidden'); }
 
+
+  // 無庫存
   const noneCard = document.getElementById('noneCard');
   if(badItems.length){
     noneCard.classList.remove('hidden');
@@ -447,10 +342,13 @@ function renderResults(items){
     `).join('');
   } else { noneCard.classList.add('hidden'); }
 
-  let preview = '📋 訂單確認：\n';
+  // 給客人訊息
+  let preview = '訂單確認：\n';
   if(haveItems.length){
     groupByCategory(haveItems).forEach(g=>{ preview+=`【${g.label}】\n`; g.items.forEach(i=>{ preview+=`${i.name} ${i.qtyDisplay}\n`; }); });
   } else { preview+='（無）\n'; }
+
+
   if(badItems.length){
     preview += '\n❌ 無庫存：\n';
     groupByCategory(badItems).forEach(g=>{ preview+=`【${g.label}】\n`; g.items.forEach(i=>{ preview+=`${i.name} ${i.qtyDisplay}\n`; }); });
