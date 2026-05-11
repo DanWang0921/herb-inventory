@@ -235,28 +235,19 @@ const ALIAS = {
 
 function fuzzyFind(input) {
   const n = norm(input);
+
+  // 1. 完全符合
   if(invMap[n]) return invMap[n];
-  if(EXACT_ONLY.has(n)) return null;
+
+  // 2. 特殊簡寫對照表
   for(const [alias, full] of Object.entries(ALIAS)){
     if(n === norm(alias)){
       const fullNorm = norm(full);
       if(invMap[fullNorm]) return invMap[fullNorm];
-      return {n: full, s: '有', p: 0, cat: getCategory(full)};
     }
   }
-  const suffixes = ['湯','散','丸','飲','膏','丹','片'];
-  for(const suf of suffixes){
-    const fullKey = n + suf;
-    if(invMap[fullKey]) return invMap[fullKey];
-  }
-  for(const key of Object.keys(invMap)){
-    if(key.startsWith(n) && key.length <= n.length + 4) return invMap[key];
-  }
-  if(n.length >= 2){
-    for(const key of Object.keys(invMap)){
-      if(key.includes(n)) return invMap[key];
-    }
-  }
+
+  // 找不到就回傳 null（不做模糊比對）
   return null;
 }
 
