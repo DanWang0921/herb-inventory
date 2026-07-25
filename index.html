@@ -56,6 +56,7 @@
   .preview-wrap pre { font-family: -apple-system, 'PingFang TC', monospace; font-size: 14px; line-height: 1.9; color: #2c2416; white-space: pre-wrap; }
   .btn-copy { width: 100%; padding: 15px; font-size: 16px; font-weight: 700; background: #2d7a4f; color: #fff; border: none; border-radius: 12px; cursor: pointer; -webkit-appearance: none; transition: opacity 0.15s, transform 0.1s; }
   .btn-copy:active { opacity: 0.8; transform: scale(0.98); }
+  .btn-copy-miss { background: #c0392b; }
   .foot-note { font-size: 11px; color: #a0906e; text-align: center; margin-top: 10px; line-height: 1.6; }
   .hidden { display: none; }
   #loadingOverlay { position: fixed; inset: 0; background: rgba(44,36,22,0.55); display: flex; align-items: center; justify-content: center; z-index: 100; cursor: pointer; }
@@ -113,7 +114,7 @@
 荷葉2"></textarea>
     <div class="ac-dropdown" id="acDropdown"></div>
   </div>
-  <p class="hint">✦ 品名後直接加數量（如：補陽還五湯8，小青龍湯錠5，或簡寫「小柴胡錠5」）<br>✦ 輸入時會跳出建議清單，可點選或用方向鍵＋Enter快速選取<br>✦ 自動判斷單方100g／單方200g／複方200g／錠劑<br>✦ 橘色標示為合約品項，黃色標示為預訂品項</p>
+  <p class="hint">✦ 品名後直接加數量（如：補陽還五湯8，小青龍湯錠5，或簡寫「小柴胡錠5」）<br>✦ 輸入時會跳出建議清單，可點選或用方向鍵＋Enter快速選取<br>✦ 自動判斷單方100g／單方200g／複方200g／錠劑500T<br>✦ 合約品項標示（約）、預訂品項標示（預）；低庫存正常顯示不特別標示</p>
   <div class="btn-group">
     <button class="btn btn-primary" onclick="checkInventory()">查詢庫存</button>
     <button class="btn btn-refresh" onclick="loadCSV()">🔄 更新</button>
@@ -136,10 +137,15 @@
     <div id="noneArea"></div>
   </div>
   <div class="card">
-    <div class="card-label">傳給客人的訊息</div>
-    <div class="preview-wrap"><pre id="previewText"></pre></div>
-    <button class="btn-copy" onclick="copyForClient()">複製給客人 📋</button>
+    <div class="card-label">訂單確認訊息</div>
+    <div class="preview-wrap"><pre id="previewHaveText"></pre></div>
+    <button class="btn-copy" onclick="copyText('previewHaveText', this)">複製訂單確認 📋</button>
     <p class="foot-note" id="footNote">⚠ 庫存每日變動，以實際出單為準</p>
+  </div>
+  <div class="card hidden" id="missPreviewCard">
+    <div class="card-label">缺藥清單訊息</div>
+    <div class="preview-wrap"><pre id="previewMissText"></pre></div>
+    <button class="btn-copy btn-copy-miss" onclick="copyText('previewMissText', this)">複製缺藥清單 📋</button>
   </div>
 </div>
 
@@ -210,13 +216,13 @@ async function loadCSV() {
     if(!tabletRes.ok) throw new Error('錠劑 HTTP ' + tabletRes.status);
     const [herbText, tabletText] = await Promise.all([herbRes.text(), tabletRes.text()]);
     const herbMap = parseCSV(herbText, HERB_STATUS, getCategory);
-    const tabletMap = parseCSV(tabletText, TABLET_STATUS, function(){ return '錠劑'; });
+    const tabletMap = parseCSV(tabletText, TABLET_STATUS, function(){ return '錠劑500T'; });
     invMap = Object.assign({}, herbMap, tabletMap);
     const count = Object.keys(invMap).length;
     const now = new Date();
     lastUpdated = `${now.getMonth()+1}/${now.getDate()} ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
     dot.className = 'sync-dot ok';
-    msg.textContent = `已同步 ${count} 項（含錠劑 ${Object.keys(tabletMap).length} 項）｜${lastUpdated}`;
+    msg.textContent = `已同步 ${count} 項（含錠劑500T ${Object.keys(tabletMap).length} 項）｜${lastUpdated}`;
     document.getElementById('footNote').textContent = `⚠ 庫存每日變動，以實際出單為準｜同步：${lastUpdated}`;
   } catch(e) {
     dot.className = 'sync-dot err';
@@ -302,9 +308,22 @@ function fuzzyFind(input) {
 }
 
 function statusToState(status){
-  if(status === '有' || status === '低' || status === '合約') return 'have';
+  if(status === '有' || status === '低') return 'have';
+  if(status === '合約') return 'contract';
   if(status === '預訂' || status === '預約') return 'reserve';
   return 'miss'; // 無 或其他未知狀態
+}
+
+function statusSuffix(st){
+  if(st === 'contract') return '（約）';
+  if(st === 'reserve') return '（預）';
+  return '';
+}
+
+function statusTagClass(st){
+  if(st === 'contract') return 'tag-contract';
+  if(st === 'reserve') return 'tag-reserve';
+  return 'tag-have';
 }
 
 function checkInventory(){
@@ -328,7 +347,7 @@ function checkInventory(){
 }
 
 function groupByCategory(items) {
-  const order = ['複方200g','單方100g','單方200g','錠劑','無藥證'];
+  const order = ['複方200g','單方100g','單方200g','錠劑500T','無藥證'];
   const map = {};
   items.forEach(i => {
     if(!map[i.cat]) map[i.cat] = [];
@@ -338,7 +357,7 @@ function groupByCategory(items) {
 }
 
 function renderResults(items){
-  const haveItems = items.filter(i=>i.st==='have' || i.st==='reserve');
+  const haveItems = items.filter(i=>i.st==='have' || i.st==='reserve' || i.st==='contract');
   const badItems = items.filter(i=>i.st==='miss');
 
   let total = 0; let hasTimePrice = false;
@@ -371,8 +390,8 @@ function renderResults(items){
     document.getElementById('haveArea').innerHTML = groupByCategory(haveItems).map(g=>`
       <div class="sub-label">${g.label}</div>
       <div class="tag-wrap">${g.items.map(i=>{
-        const cls = i.st==='reserve' ? 'tag-reserve' : 'tag-have';
-        const suffix = i.st==='reserve' ? '（預訂）' : '';
+        const cls = statusTagClass(i.st);
+        const suffix = statusSuffix(i.st);
         return `<span class="tag ${cls}">${i.name}${suffix}<span class="tag-qty">×${i.qtyDisplay}</span></span>`;
       }).join('')}</div>
     `).join('');
@@ -389,19 +408,23 @@ function renderResults(items){
     `).join('');
   } else { noneCard.classList.add('hidden'); }
 
-  // 給客人訊息
-  let preview = '訂單確認：\n';
+  // 訂單確認訊息
+  let previewHave = '訂單確認：\n';
   if(haveItems.length){
-    groupByCategory(haveItems).forEach(g=>{ preview+=`【${g.label}】\n`; g.items.forEach(i=>{ const suffix = i.st==='reserve' ? '（預訂）' : ''; preview+=`${i.name}${suffix} ${i.qtyDisplay}\n`; }); });
-  } else { preview+='（無）\n'; }
+    groupByCategory(haveItems).forEach(g=>{ previewHave+=`【${g.label}】\n`; g.items.forEach(i=>{ previewHave+=`${i.name}${statusSuffix(i.st)} ${i.qtyDisplay}\n`; }); });
+  } else { previewHave+='（無）\n'; }
+  previewHave += '\n（庫存每日變動，以實際出單為準）';
+  document.getElementById('previewHaveText').textContent = previewHave;
 
-
+  // 缺藥清單訊息
+  const missCard = document.getElementById('missPreviewCard');
   if(badItems.length){
-    preview += '\n❌ 無庫存：\n';
-    groupByCategory(badItems).forEach(g=>{ preview+=`【${g.label}】\n`; g.items.forEach(i=>{ preview+=`${i.name} ${i.qtyDisplay}\n`; }); });
-  }
-  preview += '\n（庫存每日變動，以實際出單為準）';
-  document.getElementById('previewText').textContent = preview;
+    missCard.classList.remove('hidden');
+    let previewMiss = '缺藥清單：\n';
+    groupByCategory(badItems).forEach(g=>{ previewMiss+=`【${g.label}】\n`; g.items.forEach(i=>{ previewMiss+=`${i.name} ${i.qtyDisplay}\n`; }); });
+    document.getElementById('previewMissText').textContent = previewMiss;
+  } else { missCard.classList.add('hidden'); }
+
   setTimeout(()=>{ document.getElementById('resultArea').scrollIntoView({behavior:'smooth'}); }, 100);
 }
 
@@ -411,16 +434,17 @@ function clearAll(){
   window.scrollTo({top:0,behavior:'smooth'});
 }
 
-function copyForClient(){
-  const text = document.getElementById('previewText').textContent;
-  const btn = document.querySelector('.btn-copy');
+function copyText(elId, btn){
+  const text = document.getElementById(elId).textContent;
+  const original = btn.textContent;
+  const restore = () => { btn.textContent = original; };
   if(navigator.clipboard && navigator.clipboard.writeText){
-    navigator.clipboard.writeText(text).then(()=>{ btn.textContent='已複製！✓'; setTimeout(()=>{ btn.textContent='複製給客人 📋'; },2500); });
+    navigator.clipboard.writeText(text).then(()=>{ btn.textContent='已複製！✓'; setTimeout(restore, 2500); });
   } else {
     const ta = document.createElement('textarea');
     ta.value=text; ta.style.position='fixed'; ta.style.opacity='0';
     document.body.appendChild(ta); ta.focus(); ta.select();
-    try { document.execCommand('copy'); btn.textContent='已複製！✓'; setTimeout(()=>{ btn.textContent='複製給客人 📋'; },2500); } catch(e){}
+    try { document.execCommand('copy'); btn.textContent='已複製！✓'; setTimeout(restore, 2500); } catch(e){}
     document.body.removeChild(ta);
   }
 }
@@ -433,8 +457,8 @@ let acDebounce = null;
 
 function stockInfo(status){
   const st = statusToState(status);
-  if(st === 'have' && status === '合約') return {cls:'st-contract', label:'📋 合約'};
   if(st === 'have') return {cls:'st-have', label: status === '低' ? '✅ 有貨(低)' : '✅ 有貨'};
+  if(st === 'contract') return {cls:'st-contract', label:'📋 合約'};
   if(st === 'reserve') return {cls:'st-reserve', label:'⏳ 預訂'};
   return {cls:'st-none', label:'⚠️ 缺貨'};
 }
@@ -483,7 +507,8 @@ function searchSuggestions(query){
     if(aw !== bw) return aw - bw;
     const rank = (item)=>{
       const st = statusToState(item.s);
-      if(st==='have') return item.s==='合約' ? 1 : 0;
+      if(st==='have') return 0;
+      if(st==='contract') return 1;
       if(st==='reserve') return 2;
       return 3;
     };
