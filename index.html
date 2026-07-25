@@ -216,8 +216,15 @@ async function loadCSV() {
     if(!tabletRes.ok) throw new Error('錠劑 HTTP ' + tabletRes.status);
     const [herbText, tabletText] = await Promise.all([herbRes.text(), tabletRes.text()]);
     const herbMap = parseCSV(herbText, HERB_STATUS, getCategory);
-    const tabletMap = parseCSV(tabletText, TABLET_STATUS, function(){ return '錠劑500T'; });
-    invMap = Object.assign({}, herbMap, tabletMap);
+    const tabletMapRaw = parseCSV(tabletText, TABLET_STATUS, function(){ return '錠劑500T'; });
+    // 錠劑來源表偶爾會漏打「錠」字（例如「麻杏薏甘湯」少了「錠」），
+    // 強制補上「錠」字尾，避免跟科中湯劑同名互相蓋掉
+    const tabletMap = {};
+    Object.values(tabletMapRaw).forEach(item=>{
+      const fixedName = item.n.endsWith('錠') ? item.n : item.n + '錠';
+      tabletMap[fixedName.replace(/\s/g,'')] = Object.assign({}, item, {n: fixedName});
+    });
+    invMap = Object.assign({}, tabletMap, herbMap); // 萬一仍有同名衝突，科中優先
     const count = Object.keys(invMap).length;
     const now = new Date();
     lastUpdated = `${now.getMonth()+1}/${now.getDate()} ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
