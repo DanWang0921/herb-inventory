@@ -326,11 +326,20 @@ function statusTagClass(st){
   return 'tag-have';
 }
 
+const IGNORE_LINES = new Set([
+  '謝謝','謝謝！','謝謝!','感謝','感謝！',
+  '訂單確認','訂單確認：',
+  '缺藥清單','缺藥清單：',
+  '（庫存每日變動，以實際出單為準）',
+]);
+
 function checkInventory(){
   if(Object.keys(invMap).length === 0){ alert('庫存尚未載入，請點🔄更新後再試'); return; }
   const raw = document.getElementById('inputArea').value.trim();
   if(!raw) return;
-  const lines = raw.split('\n').map(l=>l.trim()).filter(l=>l.length>0);
+  const lines = raw.split('\n').map(l=>l.trim()).filter(l=>l.length>0)
+    .filter(l => !/^【.+】$/.test(l))  // 忽略「【單方100g】」這類分類標題行
+    .filter(l => !IGNORE_LINES.has(l)); // 忽略「謝謝」「訂單確認」等範本／招呼語
   const items = [];
   lines.forEach(line => {
     const {name, qty, qtyDisplay} = parseLine(line);
