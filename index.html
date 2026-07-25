@@ -49,6 +49,7 @@
   .tag { font-size: 14px; padding: 6px 12px; border-radius: 20px; font-weight: 500; }
   .tag-have { background: #e8f5ee; color: #1e6e3e; }
   .tag-contract { background: #fef3e2; color: #c97a1a; border: 1px solid #f0c040; }
+  .tag-reserve { background: #fdf3d8; color: #96700a; border: 1px solid #e8bb3c; }
   .tag-none { background: #fdecea; color: #b03020; }
   .tag-qty { font-size: 12px; opacity: 0.75; margin-left: 3px; }
   .preview-wrap { background: #faf8f5; border: 1.5px solid #e0d8cc; border-radius: 12px; padding: 14px; margin-bottom: 12px; }
@@ -62,6 +63,25 @@
   .loading-box p { font-size: 15px; color: #2c2416; margin-top: 12px; }
   .spinner { width: 36px; height: 36px; border: 3px solid #e0d8cc; border-top-color: #2c2416; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto; }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  .ac-wrap { position: relative; }
+  .ac-dropdown { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1.5px solid #8a7560; border-top: none; border-radius: 0 0 12px 12px; max-height: 260px; overflow-y: auto; z-index: 50; display: none; box-shadow: 0 6px 16px rgba(44,36,22,0.18); }
+  .ac-dropdown.show { display: block; }
+  .ac-item { padding: 10px 14px; cursor: pointer; border-bottom: 1px solid #f0ebe3; font-size: 14px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .ac-item:last-child { border-bottom: none; }
+  .ac-item:hover, .ac-item.selected { background: #2c2416; color: #f5f2ed; }
+  .ac-item:hover .ac-stock, .ac-item.selected .ac-stock { background: rgba(255,255,255,0.25); color: #fff; }
+  .ac-item:hover .ac-cat, .ac-item.selected .ac-cat { background: rgba(255,255,255,0.25); color: #fff; }
+  .ac-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ac-name b { font-weight: 700; }
+  .ac-badges { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+  .ac-cat { font-size: 10px; padding: 2px 6px; border-radius: 8px; background: #f0ebe3; color: #8a7560; font-weight: 600; white-space: nowrap; }
+  .ac-stock { font-size: 11px; padding: 2px 8px; border-radius: 10px; white-space: nowrap; }
+  .ac-stock.st-have { background: #e8f5ee; color: #1e6e3e; }
+  .ac-stock.st-reserve { background: #fdf3d8; color: #96700a; }
+  .ac-stock.st-contract { background: #fef3e2; color: #c97a1a; }
+  .ac-stock.st-none { background: #fdecea; color: #b03020; }
+  .ac-empty { padding: 14px; text-align: center; color: #a0906e; font-size: 13px; }
 </style>
 </head>
 <body>
@@ -84,13 +104,16 @@
 
 <div class="card">
   <div class="card-label">藥品清單</div>
-  <textarea id="inputArea" placeholder="直接貼上藥品清單即可，自動分類單方／複方
+  <div class="ac-wrap">
+    <textarea id="inputArea" placeholder="直接貼上藥品清單即可，自動分類單方／複方
 
 例如：
 延胡索10
 補陽還五湯8
 荷葉2"></textarea>
-  <p class="hint">✦ 品名後直接加數量（如：補陽還五湯8）<br>✦ 自動判斷單方100g／單方200g／複方200g<br>✦ 橘色標示為合約品項（-約）</p>
+    <div class="ac-dropdown" id="acDropdown"></div>
+  </div>
+  <p class="hint">✦ 品名後直接加數量（如：補陽還五湯8，小青龍湯錠5，或簡寫「小柴胡錠5」）<br>✦ 輸入時會跳出建議清單，可點選或用方向鍵＋Enter快速選取<br>✦ 自動判斷單方100g／單方200g／複方200g／錠劑<br>✦ 橘色標示為合約品項，黃色標示為預訂品項</p>
   <div class="btn-group">
     <button class="btn btn-primary" onclick="checkInventory()">查詢庫存</button>
     <button class="btn btn-refresh" onclick="loadCSV()">🔄 更新</button>
@@ -122,6 +145,9 @@
 
 <script>
 const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vR7aEd2Xd24nhhkO5ofpcd-3bt5iFvDCRcya1THku0OvAcd7aQBEP7Cw8r4Q_cupliHCO2eQIYHxd_3/pub?output=csv';
+const TABLET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vREZkhefVsnrgm9gGs6afrmwMI9MvHhPNjMHbIz10ReSmuLhdJ7cq0ktaUSYfivPRhVsESppmrIadrP/pub?output=csv';
+const HERB_STATUS = new Set(['有','無','合約']);
+const TABLET_STATUS = new Set(['低','預訂','預約','合約','無']);
 const THRESHOLD = 3330;
 let invMap = {};
 let lastUpdated = '';
@@ -149,19 +175,19 @@ function parseCSVLine(line) {
   return result;
 }
 
-function parseCSV(text) {
+function parseCSV(text, statusSet, catFn) {
   const newMap = {};
   const lines = text.split('\n');
   lines.forEach(line => {
     const cols = parseCSVLine(line);
     for(let i = 1; i < cols.length - 1; i++){
       const status = (cols[i]||'').trim().replace(/^"|"$/g,'');
-      if(status === '有' || status === '無' || status === '合約'){
+      if(statusSet.has(status)){
         const name = (cols[i-1]||'').trim().replace(/^"|"$/g,'');
         const priceRaw = (cols[i+1]||'').trim().replace(/^"|"$/g,'').replace(/,/g,'');
         const price = parseInt(priceRaw) || 0;
         if(name && name.length >= 2 && isNaN(Number(name)) && !/^[\d劃單複方gml以上每目實際]+$/.test(name)){
-          const cat = getCategory(name);
+          const cat = catFn(name);
           newMap[name.replace(/\s/g,'')] = {n: name, s: status, p: price, cat: cat};
         }
       }
@@ -176,15 +202,21 @@ async function loadCSV() {
   dot.className = 'sync-dot loading';
   msg.textContent = '更新中...';
   try {
-    const res = await fetch(CSV_URL + '&t=' + Date.now());
-    if(!res.ok) throw new Error('HTTP ' + res.status);
-    const text = await res.text();
-    invMap = parseCSV(text);
+    const [herbRes, tabletRes] = await Promise.all([
+      fetch(CSV_URL + '&t=' + Date.now()),
+      fetch(TABLET_CSV_URL + '&t=' + Date.now())
+    ]);
+    if(!herbRes.ok) throw new Error('科中 HTTP ' + herbRes.status);
+    if(!tabletRes.ok) throw new Error('錠劑 HTTP ' + tabletRes.status);
+    const [herbText, tabletText] = await Promise.all([herbRes.text(), tabletRes.text()]);
+    const herbMap = parseCSV(herbText, HERB_STATUS, getCategory);
+    const tabletMap = parseCSV(tabletText, TABLET_STATUS, function(){ return '錠劑'; });
+    invMap = Object.assign({}, herbMap, tabletMap);
     const count = Object.keys(invMap).length;
     const now = new Date();
     lastUpdated = `${now.getMonth()+1}/${now.getDate()} ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
     dot.className = 'sync-dot ok';
-    msg.textContent = `已同步 ${count} 項｜${lastUpdated}`;
+    msg.textContent = `已同步 ${count} 項（含錠劑 ${Object.keys(tabletMap).length} 項）｜${lastUpdated}`;
     document.getElementById('footNote').textContent = `⚠ 庫存每日變動，以實際出單為準｜同步：${lastUpdated}`;
   } catch(e) {
     dot.className = 'sync-dot err';
@@ -247,8 +279,32 @@ function fuzzyFind(input) {
     }
   }
 
+  // 3. 「簡寫＋錠」查錠劑：先去掉尾巴的「錠」，用簡寫對照表解析出完整湯劑名稱，
+  //    再補回「錠」查錠劑庫存（例如打「小柴胡錠」會自動查「小柴胡湯錠」）
+  if(n.endsWith('錠')){
+    const base = n.slice(0, -1);
+    let baseFull = null;
+    if(invMap[base]){
+      baseFull = invMap[base].n;
+    } else {
+      for(const [alias, full] of Object.entries(ALIAS)){
+        if(base === norm(alias)){ baseFull = full; break; }
+      }
+    }
+    if(baseFull){
+      const tabletKey = norm(baseFull) + '錠';
+      if(invMap[tabletKey]) return invMap[tabletKey];
+    }
+  }
+
   // 找不到就回傳 null（不做模糊比對）
   return null;
+}
+
+function statusToState(status){
+  if(status === '有' || status === '低' || status === '合約') return 'have';
+  if(status === '預訂' || status === '預約') return 'reserve';
+  return 'miss'; // 無 或其他未知狀態
 }
 
 function checkInventory(){
@@ -261,10 +317,7 @@ function checkInventory(){
     const {name, qty, qtyDisplay} = parseLine(line);
     const found = fuzzyFind(name);
     if(found){
-      let st = 'none';
-      if(found.s === '有') st = 'have';
-      else if(found.s === '合約') st = 'have';
-      // 合約品項名稱加-約
+      const st = statusToState(found.s);
       const displayName = found.n;
       items.push({name: displayName, qty, qtyDisplay, st, price: found.p, cat: found.cat});
     } else {
@@ -275,7 +328,7 @@ function checkInventory(){
 }
 
 function groupByCategory(items) {
-  const order = ['複方200g','單方100g','單方200g','無藥證'];
+  const order = ['複方200g','單方100g','單方200g','錠劑','無藥證'];
   const map = {};
   items.forEach(i => {
     if(!map[i.cat]) map[i.cat] = [];
@@ -285,9 +338,8 @@ function groupByCategory(items) {
 }
 
 function renderResults(items){
-  const haveItems = items.filter(i=>i.st==='have');
-  const contractItems = items.filter(i=>i.st==='contract');
-  const badItems = items.filter(i=>i.st!=='have');
+  const haveItems = items.filter(i=>i.st==='have' || i.st==='reserve');
+  const badItems = items.filter(i=>i.st==='miss');
 
   let total = 0; let hasTimePrice = false;
   haveItems.forEach(i=>{ if(i.price===0) hasTimePrice=true; else total += i.price*i.qty; });
@@ -300,7 +352,7 @@ function renderResults(items){
   `;
 
   const amountBox = document.getElementById('amountBox');
-  if(haveItems.length + contractItems.length > 0){
+  if(haveItems.length > 0){
     const isWarn = total < THRESHOLD;
     amountBox.innerHTML = `
       <div class="amount-box ${isWarn?'amount-warn':'amount-ok'}">
@@ -318,7 +370,11 @@ function renderResults(items){
     haveCard.classList.remove('hidden');
     document.getElementById('haveArea').innerHTML = groupByCategory(haveItems).map(g=>`
       <div class="sub-label">${g.label}</div>
-      <div class="tag-wrap">${g.items.map(i=>`<span class="tag tag-have">${i.name}<span class="tag-qty">×${i.qtyDisplay}</span></span>`).join('')}</div>
+      <div class="tag-wrap">${g.items.map(i=>{
+        const cls = i.st==='reserve' ? 'tag-reserve' : 'tag-have';
+        const suffix = i.st==='reserve' ? '（預訂）' : '';
+        return `<span class="tag ${cls}">${i.name}${suffix}<span class="tag-qty">×${i.qtyDisplay}</span></span>`;
+      }).join('')}</div>
     `).join('');
   } else { haveCard.classList.add('hidden'); }
 
@@ -336,7 +392,7 @@ function renderResults(items){
   // 給客人訊息
   let preview = '訂單確認：\n';
   if(haveItems.length){
-    groupByCategory(haveItems).forEach(g=>{ preview+=`【${g.label}】\n`; g.items.forEach(i=>{ preview+=`${i.name} ${i.qtyDisplay}\n`; }); });
+    groupByCategory(haveItems).forEach(g=>{ preview+=`【${g.label}】\n`; g.items.forEach(i=>{ const suffix = i.st==='reserve' ? '（預訂）' : ''; preview+=`${i.name}${suffix} ${i.qtyDisplay}\n`; }); });
   } else { preview+='（無）\n'; }
 
 
@@ -369,7 +425,192 @@ function copyForClient(){
   }
 }
 
+// ===== 自動完成下拉建議 =====
+let acItems = [];
+let acIndex = -1;
+let acVisible = false;
+let acDebounce = null;
+
+function stockInfo(status){
+  const st = statusToState(status);
+  if(st === 'have' && status === '合約') return {cls:'st-contract', label:'📋 合約'};
+  if(st === 'have') return {cls:'st-have', label: status === '低' ? '✅ 有貨(低)' : '✅ 有貨'};
+  if(st === 'reserve') return {cls:'st-reserve', label:'⏳ 預訂'};
+  return {cls:'st-none', label:'⚠️ 缺貨'};
+}
+
+function highlightMatch(name, q){
+  const idx = name.indexOf(q);
+  if(idx === -1) return name;
+  return name.slice(0,idx) + '<b>' + name.slice(idx, idx+q.length) + '</b>' + name.slice(idx+q.length);
+}
+
+function searchSuggestions(query){
+  const q = norm(query);
+  if(!q) return [];
+  const found = new Map(); // key: canonical name -> {item, score}
+
+  function add(item, score){
+    const key = item.n;
+    const cur = found.get(key);
+    if(!cur || score > cur.score) found.set(key, {item, score});
+  }
+
+  // 1. 完全符合／簡寫對照表／簡寫+錠（沿用查詢時同一套邏輯）
+  const exact = fuzzyFind(q);
+  if(exact) add(exact, 100);
+
+  // 2. 包含匹配
+  Object.values(invMap).forEach(item=>{
+    const nn = norm(item.n);
+    if(nn.includes(q) || q.includes(nn)) add(item, 80);
+  });
+
+  // 3. 粗略模糊比對（字元重疊比例）
+  if(q.length >= 2){
+    Object.values(invMap).forEach(item=>{
+      const nn = norm(item.n);
+      const matched = [...q].filter(c=>nn.includes(c)).length;
+      const score = Math.round(matched / q.length * 70);
+      if(score >= 40) add(item, score);
+    });
+  }
+
+  const list = [...found.values()];
+  list.sort((a,b)=>{
+    const aw = norm(a.item.n).startsWith(q) ? 0 : 1;
+    const bw = norm(b.item.n).startsWith(q) ? 0 : 1;
+    if(aw !== bw) return aw - bw;
+    const rank = (item)=>{
+      const st = statusToState(item.s);
+      if(st==='have') return item.s==='合約' ? 1 : 0;
+      if(st==='reserve') return 2;
+      return 3;
+    };
+    const ra = rank(a.item), rb = rank(b.item);
+    if(ra !== rb) return ra - rb;
+    return b.score - a.score;
+  });
+
+  return list.slice(0, 30).map(x=>x.item);
+}
+
+function initAutocomplete(){
+  const textarea = document.getElementById('inputArea');
+  textarea.addEventListener('input', handleAcInput);
+  textarea.addEventListener('keydown', handleAcKeydown);
+  textarea.addEventListener('click', hideAutocomplete);
+  document.addEventListener('click', (e)=>{
+    if(!e.target.closest('.ac-wrap')) hideAutocomplete();
+  });
+}
+
+function handleAcInput(e){
+  if(acDebounce) clearTimeout(acDebounce);
+  acDebounce = setTimeout(()=>{
+    const textarea = e.target;
+    const cursorPos = textarea.selectionStart;
+    const lines = textarea.value.substring(0, cursorPos).split('\n');
+    const currentLine = lines[lines.length-1].trim();
+    const cleanLine = currentLine.replace(/[\dXx×\+\s]+$/, '').trim();
+    if(cleanLine.length >= 1 && Object.keys(invMap).length > 0){
+      showAcSuggestions(cleanLine);
+    } else {
+      hideAutocomplete();
+    }
+  }, 200);
+}
+
+function handleAcKeydown(e){
+  if(!acVisible) return;
+  if(e.key === 'ArrowDown'){
+    e.preventDefault();
+    acIndex = Math.min(acIndex+1, acItems.length-1);
+    updateAcSelection();
+  } else if(e.key === 'ArrowUp'){
+    e.preventDefault();
+    acIndex = Math.max(acIndex-1, 0);
+    updateAcSelection();
+  } else if(e.key === 'Enter' || e.key === 'Tab'){
+    if(acIndex >= 0){
+      e.preventDefault();
+      selectAcItem(acItems[acIndex]);
+    }
+  } else if(e.key === 'Escape'){
+    hideAutocomplete();
+  }
+}
+
+function showAcSuggestions(query){
+  const dropdown = document.getElementById('acDropdown');
+  const matches = searchSuggestions(query);
+
+  if(matches.length === 0){
+    dropdown.innerHTML = '<div class="ac-empty">無符合品項</div>';
+    dropdown.classList.add('show');
+    acVisible = true; acItems = []; acIndex = -1;
+    return;
+  }
+
+  const q = norm(query);
+  dropdown.innerHTML = matches.map((item, i)=>{
+    const s = stockInfo(item.s);
+    return `<div class="ac-item" data-index="${i}">
+      <span class="ac-name">${highlightMatch(item.n, q)}</span>
+      <span class="ac-badges"><span class="ac-cat">${item.cat}</span><span class="ac-stock ${s.cls}">${s.label}</span></span>
+    </div>`;
+  }).join('');
+
+  dropdown.querySelectorAll('.ac-item').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      selectAcItem(matches[parseInt(el.dataset.index)]);
+    });
+    el.addEventListener('mouseenter', ()=>{
+      acIndex = parseInt(el.dataset.index);
+      updateAcSelection();
+    });
+  });
+
+  dropdown.classList.add('show');
+  acVisible = true; acItems = matches; acIndex = -1;
+}
+
+function updateAcSelection(){
+  const dropdown = document.getElementById('acDropdown');
+  dropdown.querySelectorAll('.ac-item').forEach((el, i)=>{
+    if(i === acIndex){ el.classList.add('selected'); el.scrollIntoView({block:'nearest'}); }
+    else el.classList.remove('selected');
+  });
+}
+
+function selectAcItem(item){
+  const textarea = document.getElementById('inputArea');
+  const value = textarea.value;
+  const cursorPos = textarea.selectionStart;
+  const lines = value.replace(/\r\n/g,'\n').split('\n');
+  let lineStart = 0, lineIndex = 0;
+  for(let i=0;i<lines.length;i++){
+    if(lineStart + lines[i].length >= cursorPos){ lineIndex = i; break; }
+    lineStart += lines[i].length + 1;
+  }
+  const currentLine = lines[lineIndex];
+  const numMatch = currentLine.match(/(\d+(\s*\+\s*\d+)*)\s*$/);
+  const quantity = numMatch ? numMatch[1] : '';
+  lines[lineIndex] = item.n + quantity;
+  textarea.value = lines.join('\n');
+  const newPos = lineStart + item.n.length;
+  textarea.setSelectionRange(newPos, newPos);
+  textarea.focus();
+  hideAutocomplete();
+}
+
+function hideAutocomplete(){
+  document.getElementById('acDropdown').classList.remove('show');
+  acVisible = false; acIndex = -1; acItems = [];
+}
+
 loadCSV();
+initAutocomplete();
 </script>
 </body>
 </html>
