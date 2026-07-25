@@ -314,6 +314,14 @@ function fuzzyFind(input) {
   return null;
 }
 
+function timeGreeting(){
+  const h = new Date().getHours();
+  if(h < 5) return '您好';
+  if(h < 12) return '早安';
+  if(h < 18) return '午安';
+  return '晚安';
+}
+
 function statusToState(status){
   if(status === '有' || status === '低') return 'have';
   if(status === '合約') return 'contract';
@@ -424,12 +432,20 @@ function renderResults(items){
     `).join('');
   } else { noneCard.classList.add('hidden'); }
 
-  // 訂單確認訊息
-  let previewHave = '訂單確認：\n';
-  if(haveItems.length){
+  // 訂單確認訊息（未達 $3,330 時改用湊單提醒話術）
+  let previewHave;
+  if(haveItems.length && total < THRESHOLD){
+    const shortfall = THRESHOLD - total;
+    previewHave = `${timeGreeting()}\n訂單確認：\n`;
     groupByCategory(haveItems).forEach(g=>{ previewHave+=`【${g.label}】\n`; g.items.forEach(i=>{ previewHave+=`${i.name}${statusSuffix(i.st)} ${i.qtyDisplay}\n`; }); });
-  } else { previewHave+='（無）\n'; }
-  previewHave += '\n（庫存每日變動，以實際出單為準）';
+    previewHave += `目前訂單金額缺 $${shortfall.toLocaleString()}，您可以幫我湊一下嗎？`;
+  } else {
+    previewHave = '訂單確認：\n';
+    if(haveItems.length){
+      groupByCategory(haveItems).forEach(g=>{ previewHave+=`【${g.label}】\n`; g.items.forEach(i=>{ previewHave+=`${i.name}${statusSuffix(i.st)} ${i.qtyDisplay}\n`; }); });
+    } else { previewHave+='（無）\n'; }
+    previewHave += '\n（庫存每日變動，以實際出單為準）';
+  }
   document.getElementById('previewHaveText').textContent = previewHave;
 
   // 缺藥清單訊息
