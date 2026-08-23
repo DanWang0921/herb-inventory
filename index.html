@@ -15,6 +15,7 @@
   .sync-dot { width: 7px; height: 7px; border-radius: 50%; background: #aaa; flex-shrink: 0; }
   .sync-dot.ok { background: #4cd97b; }
   .sync-dot.err { background: #ff6b6b; }
+  .sync-dot.warn { background: #f0a030; }
   .sync-dot.loading { background: #f0c040; animation: pulse 1s infinite; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
   .card { background: #fff; border-radius: 16px; margin: 16px; padding: 16px; box-shadow: 0 2px 12px rgba(44,36,22,0.07); }
@@ -168,29 +169,46 @@ function getCategory(name) {
   return '複方200g';
 }
 
-function parseCSVLine(line) {
-  const result = [];
-  let cur = ''; let inQ = false;
-  for(let i = 0; i < line.length; i++){
-    const c = line[i];
-    if(c === '"'){ inQ = !inQ; }
-    else if(c === ',' && !inQ){ result.push(cur.trim()); cur = ''; }
-    else { cur += c; }
+// 正確處理 CSV 規格：引號內的逗號/換行都是欄位內容的一部分，
+// 引號內連續兩個雙引號 "" 代表一個字面上的雙引號。
+// 直接掃描整份文字，不能先用 text.split('\n') 切行，
+// 否則欄位裡如果剛好有換行就會被硬切斷、資料錯位。
+function parseCSVText(text) {
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1); // 去除 Google 匯出常見的 UTF-8 BOM
+
+  const rows = [];
+  let row = [], field = '', inQuotes = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; }
+        else inQuotes = false;
+      } else {
+        field += c;
+      }
+    } else {
+      if (c === '"') inQuotes = true;
+      else if (c === ',') { row.push(field); field = ''; }
+      else if (c === '\r') { /* 交給 \n 統一斷行 */ }
+      else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+      else field += c;
+    }
   }
-  result.push(cur.trim());
-  return result;
+  if (field.length > 0 || row.length > 0) { row.push(field); rows.push(row); }
+  return rows.filter(r => !(r.length === 1 && r[0] === ''));
 }
 
 function parseCSV(text, statusSet, catFn) {
   const newMap = {};
-  const lines = text.split('\n');
-  lines.forEach(line => {
-    const cols = parseCSVLine(line);
+  const rows = parseCSVText(text);
+  rows.forEach(cols => {
     for(let i = 1; i < cols.length; i++){
-      const status = (cols[i]||'').trim().replace(/^"|"$/g,'');
+      const status = (cols[i]||'').trim();
       if(statusSet.has(status)){
-        const name = (cols[i-1]||'').trim().replace(/^"|"$/g,'');
-        const priceRaw = (cols[i+1]||'').trim().replace(/^"|"$/g,'').replace(/,/g,'');
+        const name = (cols[i-1]||'').trim();
+        const priceRaw = (cols[i+1]||'').trim().replace(/,/g,'');
         const price = parseInt(priceRaw) || 0;
         if(name && name.length >= 2 && isNaN(Number(name)) && !/^[\d劃單複方gml以上每目實際]+$/.test(name)){
           const cat = catFn(name);
@@ -207,52 +225,113 @@ async function loadCSV() {
   const msg = document.getElementById('syncMsg');
   dot.className = 'sync-dot loading';
   msg.textContent = '更新中...';
-  try {
-    const [herbRes, tabletRes] = await Promise.all([
-      fetch(CSV_URL + '&t=' + Date.now()),
-      fetch(TABLET_CSV_URL + '&t=' + Date.now())
-    ]);
-    if(!herbRes.ok) throw new Error('科中 HTTP ' + herbRes.status);
-    if(!tabletRes.ok) throw new Error('錠劑 HTTP ' + tabletRes.status);
-    const [herbText, tabletText] = await Promise.all([herbRes.text(), tabletRes.text()]);
-    const herbMap = parseCSV(herbText, HERB_STATUS, getCategory);
-    const tabletMapRaw = parseCSV(tabletText, TABLET_STATUS, function(){ return '錠劑500T'; });
+
+  // 兩份來源各自獨立 fetch + 錯誤處理，其中一份失敗不影響另一份正常顯示
+  const [herbResult, tabletResult] = await Promise.allSettled([
+    fetch(CSV_URL + '&t=' + Date.now()).then(r => {
+      if(!r.ok) throw new Error('科中 HTTP ' + r.status);
+      return r.text();
+    }),
+    fetch(TABLET_CSV_URL + '&t=' + Date.now()).then(r => {
+      if(!r.ok) throw new Error('錠劑 HTTP ' + r.status);
+      return r.text();
+    })
+  ]);
+
+  const errors = [];
+  let herbMap = {}, tabletMap = {};
+
+  if (herbResult.status === 'fulfilled') {
+    herbMap = parseCSV(herbResult.value, HERB_STATUS, getCategory);
+  } else {
+    errors.push('科中資料載入失敗');
+  }
+
+  if (tabletResult.status === 'fulfilled') {
+    const tabletMapRaw = parseCSV(tabletResult.value, TABLET_STATUS, function(){ return '錠劑500T'; });
     // 錠劑來源表偶爾會漏打「錠」字（例如「麻杏薏甘湯」少了「錠」），
     // 強制補上「錠」字尾，避免跟科中湯劑同名互相蓋掉
-    const tabletMap = {};
     Object.values(tabletMapRaw).forEach(item=>{
       const fixedName = item.n.endsWith('錠') ? item.n : item.n + '錠';
       tabletMap[fixedName.replace(/\s/g,'')] = Object.assign({}, item, {n: fixedName});
     });
-    invMap = Object.assign({}, tabletMap, herbMap); // 萬一仍有同名衝突，科中優先
-    const count = Object.keys(invMap).length;
-    const now = new Date();
-    lastUpdated = `${now.getMonth()+1}/${now.getDate()} ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
+  } else {
+    errors.push('錠劑資料載入失敗');
+  }
+
+  // 只要有任何一份成功，就用成功的那份更新畫面（沿用另一份的舊資料，而不是整個清空）
+  if (herbResult.status === 'fulfilled' || tabletResult.status === 'fulfilled') {
+    const keptHerb = herbResult.status === 'fulfilled' ? herbMap : Object.fromEntries(Object.entries(invMap).filter(([,v]) => v.cat !== '錠劑500T'));
+    const keptTablet = tabletResult.status === 'fulfilled' ? tabletMap : Object.fromEntries(Object.entries(invMap).filter(([,v]) => v.cat === '錠劑500T'));
+    invMap = Object.assign({}, keptTablet, keptHerb); // 萬一仍有同名衝突，科中優先
+  }
+
+  const count = Object.keys(invMap).length;
+  const now = new Date();
+  lastUpdated = `${now.getMonth()+1}/${now.getDate()} ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
+
+  if (errors.length === 0) {
     dot.className = 'sync-dot ok';
     msg.textContent = `已同步 ${count} 項（含錠劑500T ${Object.keys(tabletMap).length} 項）｜${lastUpdated}`;
     document.getElementById('footNote').textContent = `⚠ 庫存每日變動，以實際出單為準｜同步：${lastUpdated}`;
-  } catch(e) {
+  } else if (errors.length === 1 && count > 0) {
+    dot.className = 'sync-dot warn';
+    msg.textContent = `⚠ ${errors[0]}，其餘 ${count} 項已更新｜${lastUpdated}`;
+    document.getElementById('footNote').textContent = `⚠ ${errors[0]}，其餘資料以實際出單為準｜同步：${lastUpdated}`;
+  } else {
     dot.className = 'sync-dot err';
-    msg.textContent = '同步失敗，請點🔄重試';
+    msg.textContent = errors.join('、') + '，請點🔄重試';
   }
   document.getElementById('loadingOverlay').style.display = 'none';
 }
 
 function norm(s){ return s.replace(/\s+/g,'').replace(/[（）【】()[\]×x、，,。.！!？?]/g,''); }
 
+const CN_NUM = {'零':0,'一':1,'二':2,'兩':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9};
+function cnToNum(s) {
+  if (/^\d+$/.test(s)) return parseInt(s, 10);
+  if (s === '十') return 10;
+  let m;
+  if ((m = s.match(/^十([一二三四五六七八九])$/))) return 10 + CN_NUM[m[1]];
+  if ((m = s.match(/^([二三四五六七八九])十([一二三四五六七八九]?)$/))) return CN_NUM[m[1]] * 10 + (m[2] ? CN_NUM[m[2]] : 0);
+  return CN_NUM[s] !== undefined ? CN_NUM[s] : null;
+}
+const QTY_UNIT = '(?:瓶|包|罐|盒|條|支|片|顆|份|公克|克|g|袋)';
+
+// hasQty: 是否有從文字裡實際抓到數量（用來讓上層判斷「找不到品項又沒寫數量」
+// 的段落，例如客戶/店名抬頭，可以直接當雜訊忽略，而不是誤判成缺藥品項）
 function parseLine(line){
   let s = line.replace(/[Xx×＊*]/g, ' ').trim();
-  const addMatch = s.match(/^(.+?)\s*(\d+\s*\+\s*\d+)$/);
-  if(addMatch && addMatch[1].trim().length > 0){
-    const parts = addMatch[2].split('+').map(n=>parseInt(n.trim()));
-    const total = parts.reduce((a,b)=>a+b,0);
-    return {name: addMatch[1].trim(), qty: total, qtyDisplay: addMatch[2].trim()};
+
+  // 「5+3」→ 加總
+  let m = s.match(new RegExp('^(.+?)\\s*(\\d+\\s*[+＋]\\s*\\d+)\\s*' + QTY_UNIT + '?$'));
+  if (m && m[1].trim()) {
+    const total = m[2].split(/[+＋]/).reduce((a, b) => a + parseInt(b.trim(), 10), 0);
+    return { name: m[1].trim(), qty: total, qtyDisplay: m[2].trim(), hasQty: true };
   }
-  const numMatch = s.match(/^(.+?)\s*(\d+)$/);
-  if(numMatch && numMatch[1].trim().length > 0){
-    return {name: numMatch[1].trim(), qty: parseInt(numMatch[2]), qtyDisplay: numMatch[2]};
+
+  // 「+1」→ 數量1（單純的前綴加號數量標示，不是加總）
+  m = s.match(new RegExp('^(.+?)\\s*[+＋]\\s*(\\d+)\\s*' + QTY_UNIT + '?$'));
+  if (m && m[1].trim()) {
+    return { name: m[1].trim(), qty: parseInt(m[2], 10), qtyDisplay: '+' + m[2], hasQty: true };
   }
-  return {name: line.trim(), qty: 1, qtyDisplay: '1'};
+
+  // 純數字，可帶單位：大柴胡湯5 / 大柴胡湯5瓶 / 1瓶
+  m = s.match(new RegExp('^(.+?)\\s*(\\d+)\\s*' + QTY_UNIT + '?$'));
+  if (m && m[1].trim()) {
+    return { name: m[1].trim(), qty: parseInt(m[2], 10), qtyDisplay: m[2], hasQty: true };
+  }
+
+  // 中文數字，可帶單位：生地黃六 / 板藍根一瓶
+  m = s.match(new RegExp('^(.+?)\\s*([零一二三四五六七八九十兩]+)\\s*' + QTY_UNIT + '?$'));
+  if (m && m[1].trim()) {
+    const n = cnToNum(m[2]);
+    if (n !== null && n > 0) {
+      return { name: m[1].trim(), qty: n, qtyDisplay: m[2], hasQty: true };
+    }
+  }
+
+  return { name: s, qty: 1, qtyDisplay: '1', hasQty: false };
 }
 
 const ALIAS = {
@@ -355,17 +434,27 @@ function checkInventory(){
   const lines = raw.split('\n').map(l=>l.trim()).filter(l=>l.length>0)
     .filter(l => !/^【.+】$/.test(l))  // 忽略「【單方100g】」這類分類標題行
     .filter(l => !IGNORE_LINES.has(l)); // 忽略「謝謝」「訂單確認」等範本／招呼語
-  const items = [];
+
+  // 一行也可能是逗號/頓號分隔的多個品項（例如整段貼上的訊息），先拆成單一段落再各自解析
+  const segments = [];
   lines.forEach(line => {
-    const {name, qty, qtyDisplay} = parseLine(line);
+    line.split(/[，,、]/).map(s=>s.trim()).filter(s=>s.length>0)
+        .forEach(seg => segments.push(seg));
+  });
+
+  const items = [];
+  segments.forEach(seg => {
+    const {name, qty, qtyDisplay, hasQty} = parseLine(seg);
     const found = fuzzyFind(name);
     if(found){
       const st = statusToState(found.s);
       const displayName = found.n;
       items.push({name: displayName, qty, qtyDisplay, st, price: found.p, cat: found.cat});
-    } else {
+    } else if (hasQty) {
+      // 有寫數量但找不到品項 → 提醒使用者「無藥證」
       items.push({name, qty, qtyDisplay, st:'miss', price: 0, cat: '無藥證'});
     }
+    // 沒數量又找不到品項（例如客戶/店名抬頭）→ 視為雜訊，直接忽略
   });
   renderResults(items);
 }
