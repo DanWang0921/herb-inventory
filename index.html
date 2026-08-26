@@ -420,9 +420,13 @@ function statusTagClass(st){
   return 'tag-have';
 }
 
+// 明確的招呼語／語助詞清單（只有整段完全等於清單裡的字才會被忽略，
+// 不用「沒寫數量」去猜測是不是雜訊——避免真正的品項被誤判消失）
 const IGNORE_LINES = new Set([
-  '謝謝','謝謝！','謝謝!','感謝','感謝！',
-  '訂單確認','訂單確認：',
+  '你好','您好','大家好','早安','午安','晚安',
+  '謝謝','謝謝！','謝謝!','謝謝你','謝謝妳','感謝','感謝！',
+  '辛苦了','麻煩你','麻煩妳','不好意思','好的','收到','OK','ok',
+  '訂單','訂單確認','訂單確認：',
   '缺藥清單','缺藥清單：',
   '（庫存每日變動，以實際出單為準）',
 ]);
@@ -432,8 +436,7 @@ function checkInventory(){
   const raw = document.getElementById('inputArea').value.trim();
   if(!raw) return;
   const lines = raw.split('\n').map(l=>l.trim()).filter(l=>l.length>0)
-    .filter(l => !/^【.+】$/.test(l))  // 忽略「【單方100g】」這類分類標題行
-    .filter(l => !IGNORE_LINES.has(l)); // 忽略「謝謝」「訂單確認」等範本／招呼語
+    .filter(l => !/^【.+】$/.test(l));  // 忽略「【單方100g】」這類分類標題行
 
   // 一行也可能是逗號/頓號分隔的多個品項（例如整段貼上的訊息），先拆成單一段落再各自解析
   const segments = [];
@@ -444,17 +447,18 @@ function checkInventory(){
 
   const items = [];
   segments.forEach(seg => {
-    const {name, qty, qtyDisplay, hasQty} = parseLine(seg);
+    if (IGNORE_LINES.has(seg)) return; // 明確的招呼語／語助詞才忽略
+    const {name, qty, qtyDisplay} = parseLine(seg);
     const found = fuzzyFind(name);
     if(found){
       const st = statusToState(found.s);
       const displayName = found.n;
       items.push({name: displayName, qty, qtyDisplay, st, price: found.p, cat: found.cat});
-    } else if (hasQty) {
-      // 有寫數量但找不到品項 → 提醒使用者「無藥證」
+    } else {
+      // 找不到就一律顯示「無藥證」，讓人工判斷是打錯字還是真的沒這個品項——
+      // 絕不因為「沒寫數量」就悄悄跳過，避免真實訂單品項消失不見
       items.push({name, qty, qtyDisplay, st:'miss', price: 0, cat: '無藥證'});
     }
-    // 沒數量又找不到品項（例如客戶/店名抬頭）→ 視為雜訊，直接忽略
   });
   renderResults(items);
 }
